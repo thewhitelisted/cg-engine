@@ -1,4 +1,5 @@
 name: Publish league odds
+# schedule re-registration nudge: 2026-10-21
 
 on:
   schedule:
