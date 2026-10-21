@@ -1,0 +1,72 @@
+name: Publish league odds
+
+on:
+  schedule:
+    # Cron is UTC and can't follow daylight saving, so each line covers both EDT (UTC-4) and EST (UTC-5).
+    - cron: "8-23/15 13,14 * * *"         # :08 and :23 -> 9 AM ET morning refresh (gate.py skips the 10 AM ones)
+    - cron: "8-59/15 15-23,0-6 * * *"     # :08 :23 :38 :53, 11 AM-2:53 AM ET: a run in a game window stays up and publishes every 10 min (loop.py)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write                # weekly keep-alive commit (scheduled workflows stop after 60 idle days)
+  actions: read                  # gate.py: skip while an earlier run is still publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      TZ: America/New_York       # game days are Eastern dates
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Game hours?
+        id: gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 gate.py
+
+      - name: Check out the page repo
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: thewhitelisted/cg-531d2447
+          token: ${{ secrets.PAGES_TOKEN }}
+          path: page
+
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true'
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+        if: steps.gate.outputs.run == 'true'
+
+      - name: ESPN login and publish config
+        if: steps.gate.outputs.run == 'true'
+        env:
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          ESPN_SWID: ${{ secrets.ESPN_SWID }}
+        run: |
+          python - <<'PY'
+          import json, os
+          json.dump({"espn_s2": os.environ["ESPN_S2"], "SWID": os.environ["ESPN_SWID"]}, open("data/espn_auth.json", "w"))
+          json.dump({"repo_dir": "page"}, open("data/publish.json", "w"))
+          PY
+          git -C page config user.name "cg-engine"
+          git -C page config user.email "cg-engine@users.noreply.github.com"
+
+      - name: Refresh odds and publish (every 10 min through the game window)
+        if: steps.gate.outputs.run == 'true'
+        run: python loop.py
+
+      - name: Weekly keep-alive
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "$(date +%u)" = "1" ] && [ "$(date +%H)" = "09" ] && [ "$(date +%M)" -lt 30 ]; then
+            git config user.name "cg-engine"
+            git config user.email "cg-engine@users.noreply.github.com"
+            date -u +%FT%TZ > .keepalive
+            git add .keepalive && git commit -m "keep-alive" && git push
+          fi
