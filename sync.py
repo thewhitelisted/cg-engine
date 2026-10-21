@@ -63,6 +63,8 @@ def normalize(j):
                    "roster": [[e["playerId"], e["playerPoolEntry"]["player"]["fullName"], e["lineupSlotId"],
                                e["playerPoolEntry"]["player"].get("injuryStatus") or ""]
                               for e in t["roster"]["entries"]]} for t in j["teams"]],
+        "pro_team": {str(e["playerId"]): e["playerPoolEntry"]["player"].get("proTeamId")
+                     for t in j["teams"] for e in t["roster"]["entries"]},
         "schedule": [[m["matchupPeriodId"], m["home"]["teamId"], m["away"]["teamId"]] for m in games],
         "results": [[m["matchupPeriodId"], m["home"]["teamId"], m["away"]["teamId"], m["winner"], *side(m["home"]),
                      by_stat(m["home"])] for m in decided],

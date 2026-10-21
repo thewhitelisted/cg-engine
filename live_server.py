@@ -56,6 +56,19 @@ def espn(views):
     return r.json()
 
 
+def transactions(sp_now, back=8):
+    """ESPN league transactions for the last `back` scoring periods (raw records, deduplicated by id)."""
+    seen, out = set(), []
+    for sp in range(max(1, sp_now - back + 1), sp_now + 1):
+        r = requests.get(BASE, params=[("view", "mTransactions2"), ("scoringPeriodId", sp)], cookies=cookies(), timeout=30)
+        r.raise_for_status()
+        for t in r.json().get("transactions", []):
+            if t.get("id") not in seen:
+                seen.add(t.get("id"))
+                out.append(t)
+    return out
+
+
 def scoreboard(day: datetime):
     """NBA games today: {pro_team_id: (state, share of game left, short detail, score line)}."""
     r = requests.get("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",

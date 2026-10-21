@@ -40,15 +40,21 @@ def main():
     live, _, _ = S.live_from(S.espn(["mMatchupScore", "mScoreboard", "mStatus"]))
     (M.DATA / "live.json").write_text(json.dumps(live))
     try:
-        frac = {k: v[1] for k, v in S.scoreboard(datetime.now()).items()}
+        sb = S.scoreboard(datetime.now())
+        frac = {k: v[1] for k, v in sb.items()}
     except Exception:
-        frac = None
+        sb = frac = None
+    try:
+        tx = S.transactions(live["latest_scoring_period"])
+    except Exception as e:
+        log(f"transactions unavailable: {type(e).__name__}: {e}")
+        tx = None
     lv = LV.Live(live=live, today_frac=frac, lg=I.load_league())
     try:
         history = json.loads(open(f"{repo}/history.json").read())
     except Exception:
         history = {}
-    data = LP.build(lv, history)
+    data = LP.build(lv, history, sb=sb, tx=tx)
     key = json.dumps({k: v for k, v in data.items() if k != "updated"}, sort_keys=True, default=str)
     try:
         old = open(f"{repo}/.content_key").read()
