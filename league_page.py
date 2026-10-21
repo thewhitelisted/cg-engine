@@ -369,6 +369,136 @@ def recent_moves(tx, lg, now, days=7):
     return rows[:25]
 
 
+def week_allplay(tots):
+    """{team: (matchup wins, losses, ties)} for one week, every team against every other team."""
+    out = {}
+    for a in tots:
+        r = [0, 0, 0]
+        for b in tots:
+            if a != b:
+                w, l, _ = compare(tots[a], tots[b])
+                r[0 if w > l else 1 if l > w else 2] += 1
+        out[a] = r
+    return out
+
+
+def awards(lg, history):
+    """Highlights of the latest finished matchup: upset, comeback, best week, unluckiest loss, luckiest win."""
+    done = sorted(lg.get("completed_weeks", []))
+    if not done:
+        return None
+    wk = done[-1]
+    names = {t["id"]: t["name"] for t in lg["teams"]}
+    res = [r for r in lg.get("results", []) if r[0] == wk and r[3] in ("HOME", "AWAY")]
+    odds = history.get(str(wk)) or {}
+    trend = (history.get("trend") or {}).get(str(wk)) or []
+    out = []
+
+    def won(r):                                          # (winner, loser, winner's odds key sign, score text)
+        _, h, a, winner, hw, hl, ht = r[:7]
+        tie = f"–{ht}" if ht else ""
+        return (h, a, 1, f"{hw}–{hl}{tie}") if winner == "HOME" else (a, h, -1, f"{hl}–{hw}{tie}")
+
+    ups = []
+    for r in res:
+        p = odds.get(f"{r[1]}-{r[2]}")
+        if p is not None:
+            w, l, s, sc = won(r)
+            pw = p if s == 1 else 1 - p
+            if pw < 0.5:
+                ups.append((pw, w, l, sc))
+    if ups:
+        pw, w, l, sc = min(ups)
+        out.append({"title": "Upset of the week", "team": names[w], "text": f"won {sc} over {names[l]} as a {pw:.0%} underdog"})
+    elif odds and res:
+        out.append({"title": "Upset of the week", "team": "None", "text": "every favorite won"})
+    comebacks = []
+    for r in res:
+        key = f"{r[1]}-{r[2]}"
+        path = [(ts, snap[key]) for ts, snap in trend if key in snap]
+        if path:
+            w, l, s, sc = won(r)
+            ts, low = min(((ts, p if s == 1 else 1 - p) for ts, p in path), key=lambda x: x[1])
+            if low < 0.5:
+                comebacks.append((low, ts, w, l, sc))
+    if comebacks:
+        low, ts, w, l, sc = min(comebacks)
+        day = datetime.fromisoformat(ts).strftime("%a")
+        out.append({"title": "Comeback of the week", "team": names[w], "text": f"down to {low:.0%} on {day}, beat {names[l]} {sc}"})
+    tots = (lg.get("week_totals") or {}).get(str(wk))
+    if tots:
+        ap = {int(k): v for k, v in week_allplay(tots).items()}
+        n = len(ap) - 1
+        best = max(ap, key=lambda k: (ap[k][0] + 0.5 * ap[k][2], -k))
+        out.append({"title": "Best week", "team": names[best], "text": f"would have beaten {ap[best][0]} of {n} teams"})
+        losers = [won(r)[1] for r in res]
+        winners = [won(r)[0] for r in res]
+        if losers:
+            u = max(losers, key=lambda k: (ap[k][0] + 0.5 * ap[k][2], -k))
+            out.append({"title": "Unluckiest loss", "team": names[u], "text": f"lost, but would have beaten {ap[u][0]} of {n} teams"})
+        if winners:
+            lw = min(winners, key=lambda k: (ap[k][0] + 0.5 * ap[k][2], k))
+            out.append({"title": "Luckiest win", "team": names[lw], "text": f"won, but would have beaten only {ap[lw][0]} of {n} teams"})
+    return {"period": wk, "items": out} if out else None
+
+
+def category_ranks(lg):
+    """Each team's season rank (1 = best) in every category over finished matchups, with the season value."""
+    weeks = [str(w) for w in lg.get("completed_weeks", []) if str(w) in lg.get("week_totals", {})]
+    if not weeks:
+        return None
+    names = {str(t["id"]): t["name"] for t in lg["teams"]}
+    season = {tid: {} for tid in names}
+    for w in weeks:
+        for tid, tot in lg["week_totals"][w].items():
+            if tid in season:
+                for k, v in tot.items():
+                    season[tid][k] = season[tid].get(k, 0) + v
+    vals = {tid: cat_values(t) for tid, t in season.items()}
+    rows = {tid: {"team": names[tid], "ranks": [], "shown": []} for tid in names}
+    for c in CATS:
+        key = {tid: -1e9 if vals[tid][c] is None else vals[tid][c] for tid in names}
+        for tid in names:
+            rows[tid]["ranks"].append(1 + sum(1 for u in names if key[u] > key[tid] + 1e-12))
+            rows[tid]["shown"].append(fmt(season[tid], c))
+    out = sorted(rows.values(), key=lambda r: (np.mean(r["ranks"]), r["team"]))
+    for r in out:
+        r["avg"] = float(np.mean(r["ranks"]))
+    return {"n": len(names), "rows": out}
+
+
+def activity(lg, tx, history):
+    """Season adds, drops and trades per team, counted from ESPN's transaction log. Each run sees only the last
+    week or so of transactions, so counted ones are kept in history["moves"] ({transaction key: [team, adds,
+    drops]} and, for trades, {key: [teams]})."""
+    seen = history.setdefault("moves", {})
+    for t in tx or []:
+        items = [i for i in t.get("items") or [] if i.get("type") in ("ADD", "DROP", "TRADE")]
+        if t.get("status") != "EXECUTED" or not items:
+            continue
+        if any(i["type"] == "TRADE" for i in items):
+            key = "trade:" + ",".join(sorted(f'{i["playerId"]}>{i.get("toTeamId")}' for i in items))
+            seen.setdefault(key, sorted({i.get("toTeamId") for i in items} | {i.get("fromTeamId") for i in items}))
+        elif t.get("id"):
+            seen.setdefault(str(t["id"]), [t.get("teamId"), sum(i["type"] == "ADD" for i in items),
+                                           sum(i["type"] == "DROP" for i in items)])
+    rec = {t["id"]: [0, 0, 0] for t in lg["teams"]}
+    for key, v in seen.items():
+        if key.startswith("trade:"):
+            for tid in v:
+                if tid in rec:
+                    rec[tid][2] += 1
+        elif v[0] in rec:
+            rec[v[0]][0] += v[1]
+            rec[v[0]][1] += v[2]
+    if not any(any(r) for r in rec.values()):
+        return []
+    names = {t["id"]: t["name"] for t in lg["teams"]}
+    rows = [{"team": names[tid], "adds": a, "drops": d, "trades": tr} for tid, (a, d, tr) in rec.items()]
+    rows.sort(key=lambda r: (-(r["adds"] + r["drops"] + 2 * r["trades"]), r["team"]))
+    return rows
+
+
 def build(lv, history=None, sb=None, tx=None):
     """Page data. `history` ({period: {matchup: odds at the first update}, "trend": {period: [[time, {matchup:
     odds}], ...]}}) is updated in place; `sb` is today's NBA scoreboard (live_server.scoreboard) and `tx` ESPN's
@@ -403,7 +533,8 @@ def build(lv, history=None, sb=None, tx=None):
             "standings": standings(lv.lg), "grid": week_grid(lv.lg, games, lv.period), "h2h": head_to_head(lv.lg),
             "allplay": all_play(lv.lg), "records": league_records(lv.lg), "top": top_performers(lv, g, start, end),
             "last": last_week(lv.lg, history), "scorecard": scorecard(lv.lg, history),
-            "moves": recent_moves(tx, lv.lg, now), "updated": now.strftime("%a %b %-d, %-I:%M %p ET")}
+            "moves": recent_moves(tx, lv.lg, now), "awards": awards(lv.lg, history),
+            "ranks": category_ranks(lv.lg), "activity": activity(lv.lg, tx, history), "updated": now.strftime("%a %b %-d, %-I:%M %p ET")}
 
 
 def compare_one(ta, tb, c):
@@ -496,20 +627,39 @@ td.self { color: var(--muted); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .tile { gap: 2px; padding: 12px 14px; }
 .tile .big { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.award .big { font-size: 17px; overflow-wrap: anywhere; }
+nav.jump { position: sticky; top: 0; z-index: 5; margin: 0 -16px; padding: 8px 16px; display: flex; gap: 6px;
+  overflow-x: auto; scrollbar-width: none; background: color-mix(in srgb, var(--bg) 90%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule); }
+nav.jump::-webkit-scrollbar { display: none; }
+nav.jump a { flex: none; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--rule); background: var(--card);
+  color: var(--ink2); font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; }
+nav.jump a:hover { border-color: var(--muted); color: var(--ink); }
+nav.jump a.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+nav.jump a:focus-visible { outline: 2px solid var(--a); outline-offset: 2px; }
+[id] { scroll-margin-top: 60px; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+td.rk { text-align: center; min-width: 40px; }
+.card.tbl:has(> table.grid) { padding-left: 0; }
+table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background: var(--card); padding-left: 10px; }
+@media (max-width: 560px) { td:first-child { white-space: normal; min-width: 116px; } }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div><h1>The Cool Guys · Matchup %(period)s</h1>
   <div class="sub">%(dates)s · updated %(updated)s</div>%(headline)s</div>
-  %(cards)s
+  %(nav)s
+  <div id="matchups" style="display:grid;gap:14px">%(cards)s</div>
   <p class="note">Win chance: each team's chance to win at least 5 of the 9 categories by Sunday, from what's happened so
   far plus a projection of every remaining game. The strip under each bar is that chance through the week (blue share
   at the bottom, one column per day). Toss-ups: categories where either side has at least a 30% chance to win.
   Games: player-games already played this week · scheduled games left. Refreshed every 30 minutes during games.</p>
   %(today)s
+  %(awards)s
   %(standings)s
   %(grid)s
+  %(ranks)s
   %(h2h)s
   %(allplay)s
   %(records)s
@@ -517,8 +667,38 @@ td.self { color: var(--muted); }
   %(last)s
   %(scorecard)s
   %(moves)s
+  %(activity)s
   %(later)s
 </div>
+<script>
+(() => {
+  const nav = document.querySelector("nav.jump");
+  if (!nav || !("IntersectionObserver" in window)) return;
+  const links = [...nav.querySelectorAll("a")];
+  const byId = new Map(links.map(a => [a.getAttribute("href").slice(1), a]));
+  const seen = new Map();
+  let hold = 0;
+  const mark = id => {
+    links.forEach(a => a.classList.toggle("on", a === byId.get(id)));
+    const a = byId.get(id);
+    if (a) nav.scrollTo({ left: a.offsetLeft - nav.clientWidth / 2 + a.offsetWidth / 2, behavior: "smooth" });
+  };
+  const update = () => {
+    if (Date.now() < hold) return;
+    const ids = [...byId.keys()];
+    const atEnd = innerHeight + scrollY >= document.documentElement.scrollHeight - 4;
+    const first = atEnd ? ids[ids.length - 1] : ids.find(id => seen.get(id));
+    if (first) mark(first);
+  };
+  const io = new IntersectionObserver(es => {
+    es.forEach(e => seen.set(e.target.id, e.isIntersecting));
+    update();
+  }, { rootMargin: "-64px 0px -55% 0px" });
+  byId.forEach((_, id) => { const el = document.getElementById(id); if (el) io.observe(el); });
+  addEventListener("scroll", () => { if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) update(); }, { passive: true });
+  links.forEach(a => a.addEventListener("click", () => { mark(a.getAttribute("href").slice(1)); hold = Date.now() + 900; }));
+})();
+</script>
 </body>
 </html>
 """
@@ -587,8 +767,14 @@ def card(gm, start, end):
             f'</div>')
 
 
-def section(title, body, note=""):
-    return f'<h2>{title}</h2><div class="card tbl scroll">{body}</div>' + (f'<p class="note">{note}</p>' if note else "")
+def section(title, body, note="", sid=""):
+    return (f'<section id="{sid}" style="display:grid;gap:14px"><h2>{title}</h2><div class="card tbl scroll">{body}</div>'
+            + (f'<p class="note">{note}</p>' if note else "") + "</section>")
+
+
+NAV = [("matchups", "Matchups"), ("today", "Today"), ("awards", "Awards"), ("standings", "Standings"),
+       ("weeks", "Weekly"), ("ranks", "Cat ranks"), ("h2h", "Head to head"), ("allplay", "All-play"),
+       ("records", "Records"), ("top", "Top players"), ("odds", "Odds"), ("moves", "Moves"), ("activity", "Activity")]
 
 
 def render(data):
@@ -614,15 +800,15 @@ def render(data):
         today = section("Playing today", f'<table><tr><th>Team</th><th>In lineup</th><th>With a game</th><th class="l">Who · tip-off</th></tr>'
                         f'{"".join(rows)}</table>',
                         "In lineup: players with a game today in an active slot and not ruled out. Bench in grey, "
-                        "ruled out struck through. Times Eastern.")
+                        "ruled out struck through. Times Eastern.", "today")
     elif data.get("today") is not None:
-        today = '<h2>Playing today</h2><p class="note">No NBA games today.</p>'
+        today = '<section id="today"><h2>Playing today</h2><p class="note">No NBA games today.</p></section>'
 
     standings_html = ""
     if finished:
         st = "".join(f'<tr><td>{i + 1}. {e(r["team"])}</td><td>{r["w"]}–{r["l"]}–{r["t"]}</td><td>{r["pct"]:.3f}</td>'
                      f'<td>{"—" if r["gb"] == 0 else f"{r["gb"]:g}"}</td></tr>' for i, r in enumerate(data["standings"]))
-        standings_html = section("Standings", f'<table><tr><th>Team</th><th>Categories W–L–T</th><th>Pct</th><th>GB</th></tr>{st}</table>')
+        standings_html = section("Standings", f'<table><tr><th>Team</th><th>Categories W–L–T</th><th>Pct</th><th>GB</th></tr>{st}</table>', sid="standings")
 
     grid_html = ""
     gd = data.get("grid")
@@ -635,7 +821,7 @@ def render(data):
                             for c in r["cells"])
             rows.append(f'<tr><td>{e(r["team"])}</td><td>{r["rec"][0]}–{r["rec"][1]}{f"–{r["rec"][2]}" if r["rec"][2] else ""}</td>{cells}</tr>')
         grid_html = section("Week by week", f'<table class="grid"><tr><th>Team</th><th>Matchups</th>{head}</tr>{"".join(rows)}</table>',
-                            "Category score in each matchup. Green won, red lost; grey italic is this week, still in progress.")
+                            "Category score in each matchup. Green won, red lost; grey italic is this week, still in progress.", "weeks")
 
     h2h_html = ""
     hh = data.get("h2h")
@@ -653,7 +839,7 @@ def render(data):
                 cells.append(f'<td class="{cls}">{w}–{l}{f"–{t}" if t else ""}</td>')
             rows.append(f'<tr><td>{e(r["team"])} <span class="lbl">{e(r["abbr"])}</span></td>{"".join(cells)}</tr>')
         h2h_html = section("Head to head", f'<table class="grid"><tr><th>Team</th>{head}</tr>{"".join(rows)}</table>',
-                           "Each row team's matchup record against each opponent.")
+                           "Each row team's matchup record against each opponent.", "h2h")
 
     allplay_html = ""
     if data["allplay"]:
@@ -664,7 +850,7 @@ def render(data):
                                f'<table><tr><th>Team</th><th>All-play W–L–T</th><th>All-play cat pct</th><th>Actual cat pct</th>'
                                f'<th>Luck</th></tr>{ap}</table>',
                                "All-play: every team against every other team, every finished week. Luck: actual category "
-                               "win percentage minus all-play, in points. Positive means your schedule has been kind.")
+                               "win percentage minus all-play, in points. Positive means your schedule has been kind.", "allplay")
 
     records_html = ""
     if data.get("records"):
@@ -672,7 +858,7 @@ def render(data):
                      for r in data["records"])
         records_html = section("League records", f'<table><tr><th>Record</th><th class="l">Team</th><th>Value</th><th>Matchup</th></tr>{rr}</table>',
                                "Best single matchups so far. Percentages need at least 75% of the league's average attempts; "
-                               "counting stats leave out the two-week All-Star matchup.")
+                               "counting stats leave out the two-week All-Star matchup.", "records")
 
     top_html = ""
     if data["top"]:
@@ -680,7 +866,7 @@ def render(data):
                      f'<td class="l">{e(r["line"])}</td></tr>' for r in data["top"])
         top_html = section("Top performers this week", f'<table><tr><th>Player</th><th class="l">Fantasy team</th><th>G</th>'
                            f'<th class="l">Line</th></tr>{tp}</table>',
-                           "Rostered players, games through last night, ranked by 9-category production.")
+                           "Rostered players, games through last night, ranked by 9-category production.", "top")
 
     last_html = ""
     if data["last"]:
@@ -694,7 +880,7 @@ def render(data):
                       f'<td class="l">{e(win)}{"" if p is None else (" ✓" if fav_won else " (upset)")}</td></tr>')
         last_html = section(f'Matchup {data["last"]["period"]}: odds against results',
                             f'<table><tr><th>Matchup</th><th>Odds at first update</th><th>Final</th><th class="l">Winner</th></tr>'
-                            f'{"".join(lr)}</table>')
+                            f'{"".join(lr)}</table>', sid="odds")
 
     score_html = ""
     sc = data.get("scorecard")
@@ -703,10 +889,10 @@ def render(data):
                  ("Strong favorites", f'{sc["big"][0]}–{sc["big"][1]}', "75% or more"),
                  ("Brier score", f'{sc["brier"]:.3f}', "coin flip .250 · lower is better"),
                  ("Avg. confidence", f'{sc["conf"]:.0%}', f'in the favorite, {sc["n"]} matchups')]
-        score_html = ('<h2>How the odds have done</h2><div class="tiles">' +
+        score_html = (f'<section id="{"" if last_html else "odds"}" style="display:grid;gap:14px"><h2>How the odds have done</h2><div class="tiles">' +
                       "".join(f'<div class="card tile"><div class="lbl">{a}</div><div class="big">{b}</div><div class="meta">{c}</div></div>'
                               for a, b, c in tiles) +
-                      '</div><p class="note">Every finished matchup, scored on the odds at its first update of the week.</p>')
+                      '</div><p class="note">Every finished matchup, scored on the odds at its first update of the week.</p></section>')
 
     moves_html = ""
     if data.get("moves"):
@@ -718,7 +904,38 @@ def render(data):
                 mv.append(f'<tr><td>{e(r["when"])}</td><td class="l">{e(r["team"])} <span class="lbl">· {e(r["kind"])}</span></td>'
                           f'<td class="l">{e(r["add"]) or "—"}</td><td class="l">{e(r["drop"]) or "—"}</td></tr>')
         moves_html = section("Recent moves", f'<table><tr><th>When</th><th class="l">Team</th><th class="l">Added</th>'
-                             f'<th class="l">Dropped</th></tr>{"".join(mv)}</table>', "Executed adds, drops and trades from the last 7 days.")
+                             f'<th class="l">Dropped</th></tr>{"".join(mv)}</table>', "Executed adds, drops and trades from the last 7 days.", "moves")
+
+    awards_html = ""
+    aw = data.get("awards")
+    if aw:
+        awards_html = (f'<section id="awards" style="display:grid;gap:14px"><h2>Matchup {aw["period"]} awards</h2><div class="tiles">' +
+                       "".join(f'<div class="card tile award"><div class="lbl">{e(a["title"])}</div><div class="big">{e(a["team"])}</div>'
+                               f'<div class="meta">{e(a["text"])}</div></div>' for a in aw["items"]) + '</div></section>')
+
+    ranks_html = ""
+    rk = data.get("ranks")
+    if rk:
+        n = rk["n"]
+
+        def heat(r):
+            x = (n - r) / (n - 1) if n > 1 else 0.5          # 1 for first, 0 for last
+            col, amt = ("--good", (x - 0.5) * 2) if x >= 0.5 else ("--bad", (0.5 - x) * 2)
+            return f'background: color-mix(in srgb, var({col}) {6 + 34 * amt:.0f}%, transparent)'
+        head = "".join(f"<th>{c}</th>" for c in CATS)
+        rows = "".join(f'<tr><td>{e(r["team"])}</td>' + "".join(f'<td class="rk" style="{heat(k)}" title="{e(v)}">{k}</td>'
+                                                               for k, v in zip(r["ranks"], r["shown"])) +
+                       f'<td>{r["avg"]:.1f}</td></tr>' for r in rk["rows"])
+        ranks_html = section("Category ranks", f'<table class="grid"><tr><th>Team</th>{head}<th>Avg</th></tr>{rows}</table>',
+                             "Season rank in each category over finished matchups (1 is best; fewest turnovers ranks first). "
+                             "Hover or long-press a cell for the season figure.", "ranks")
+
+    activity_html = ""
+    if data.get("activity"):
+        ac = "".join(f'<tr><td>{e(r["team"])}</td><td>{r["adds"]}</td><td>{r["drops"]}</td><td>{r["trades"]}</td></tr>'
+                     for r in data["activity"])
+        activity_html = section("Most active managers", f'<table><tr><th>Team</th><th>Adds</th><th>Drops</th><th>Trades</th>'
+                                f'</tr>{ac}</table>', "Since the draft, from ESPN's transaction log.", "activity")
 
     later = "" if finished else ('<p class="note">After the first matchup is final, this page adds standings, week-by-week '
                                  'results, head-to-head records, all-play and luck, league records, and a running scorecard '
@@ -727,7 +944,11 @@ def render(data):
             "cards": "\n  ".join(card(gm, data["start"], data["end"]) for gm in data["games"]), "today": today,
             "standings": standings_html, "grid": grid_html, "h2h": h2h_html, "allplay": allplay_html,
             "records": records_html, "top": top_html, "last": last_html, "scorecard": score_html, "moves": moves_html,
-            "later": later}
+            "later": later, "awards": awards_html, "ranks": ranks_html, "activity": activity_html}
+    present = {k for k in ("today", "awards", "standings", "weeks", "ranks", "h2h", "allplay", "records", "top", "odds",
+                           "moves", "activity") if f'id="{k}"' in "".join(fill.values())} | {"matchups"}
+    fill["nav"] = ('<nav class="jump" aria-label="Sections">' +
+                   "".join(f'<a href="#{k}">{lbl}</a>' for k, lbl in NAV if k in present) + "</nav>")
     page = PAGE
     for k, v in fill.items():
         page = page.replace(f"%({k})s", v)
