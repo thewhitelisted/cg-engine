@@ -21,6 +21,23 @@ URL = (f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/{SEASON
        "?view=mTeam&view=mRoster&view=mMatchupScore&view=mSettings&view=mStatus")
 
 
+STAT = {"0": "pts", "1": "blk", "2": "stl", "3": "ast", "6": "reb", "11": "tov", "13": "fgm", "14": "fga",
+        "15": "ftm", "16": "fta", "17": "tpm"}
+
+
+def week_totals(games):
+    """{period: {team_id: {stat: total}}} for every matchup with scores (finished weeks and the live one)."""
+    out = {}
+    for m in games:
+        for side in ("home", "away"):
+            s = m[side]
+            sbs = ((s.get("cumulativeScoreLive") or s.get("cumulativeScore") or {}).get("scoreByStat") or {})
+            tot = {STAT[k]: (v.get("score") or 0) for k, v in sbs.items() if k in STAT}
+            if tot:
+                out.setdefault(str(m["matchupPeriodId"]), {})[str(s["teamId"])] = tot
+    return out
+
+
 def normalize(j):
     def side(s):
         c = s.get("cumulativeScore") or {}
@@ -48,6 +65,7 @@ def normalize(j):
         "schedule": [[m["matchupPeriodId"], m["home"]["teamId"], m["away"]["teamId"]] for m in games],
         "results": [[m["matchupPeriodId"], m["home"]["teamId"], m["away"]["teamId"], m["winner"], *side(m["home"]),
                      by_stat(m["home"])] for m in decided],
+        "week_totals": week_totals(games),
         "completed_weeks": [p for p in periods
                             if all(m.get("winner") not in (None, "UNDECIDED") for m in games if m["matchupPeriodId"] == p)],
     }

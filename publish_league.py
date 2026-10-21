@@ -35,7 +35,7 @@ def git(repo, *args):
 def main():
     cfg = json.loads((M.DATA / "publish.json").read_text())
     repo = cfg["repo_dir"]
-    lg = sync.normalize(S.espn(["mTeam", "mRoster", "mMatchupScore", "mSettings", "mStatus"]))
+    lg = sync.normalize(S.espn(["mTeam", "mRoster", "mMatchupScore", "mScoreboard", "mSettings", "mStatus"]))
     (M.DATA / "league_2027.json").write_text(json.dumps(lg))
     live, _, _ = S.live_from(S.espn(["mMatchupScore", "mScoreboard", "mStatus"]))
     (M.DATA / "live.json").write_text(json.dumps(live))
@@ -44,23 +44,25 @@ def main():
     except Exception:
         frac = None
     lv = LV.Live(live=live, today_frac=frac, lg=I.load_league())
-    data = LP.build(lv)
-    key = json.dumps([[g["home"], g["away"], round(g["p_home"], 3), g["score"]] for g in data["games"]])
-    old = ""
     try:
-        old = json.dumps([[g["home"], g["away"], round(g["p_home"], 3), g["score"]]
-                          for g in json.loads(open(f"{repo}/data.json").read())["games"]])
+        history = json.loads(open(f"{repo}/history.json").read())
     except Exception:
-        pass
+        history = {}
+    data = LP.build(lv, history)
+    key = json.dumps({k: v for k, v in data.items() if k != "updated"}, sort_keys=True, default=str)
+    try:
+        old = open(f"{repo}/.content_key").read()
+    except Exception:
+        old = ""
     if key == old:
-        log("odds unchanged; nothing to push")
+        log("page content unchanged; nothing to push")
         return
     open(f"{repo}/index.html", "w").write(LP.render(data))
-    open(f"{repo}/data.json", "w").write(json.dumps({k: data[k] for k in ("period", "dates", "updated")} |
-                                                    {"games": [{k: g[k] for k in ("home", "away", "p_home", "score")}
-                                                               for g in data["games"]]}))
+    open(f"{repo}/data.json", "w").write(json.dumps(LP.public_json(data)))
+    open(f"{repo}/history.json", "w").write(json.dumps(history))
+    open(f"{repo}/.content_key", "w").write(key)
     git(repo, "pull", "--rebase", "--quiet")
-    git(repo, "add", "index.html", "data.json")
+    git(repo, "add", "index.html", "data.json", "history.json", ".content_key")
     c = git(repo, "commit", "-m", f"Update odds {data['updated']}")
     p = git(repo, "push", "--quiet")
     if p.returncode != 0:
