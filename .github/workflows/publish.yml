@@ -21,7 +21,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Game hours?
+        id: gate
+        run: python3 gate.py
+
       - name: Check out the page repo
+        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           repository: thewhitelisted/cg-531d2447
@@ -29,13 +34,16 @@ jobs:
           path: page
 
       - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true'
         with:
           python-version: "3.13"
           cache: pip
 
       - run: pip install -r requirements.txt
+        if: steps.gate.outputs.run == 'true'
 
       - name: ESPN login and publish config
+        if: steps.gate.outputs.run == 'true'
         env:
           ESPN_S2: ${{ secrets.ESPN_S2 }}
           ESPN_SWID: ${{ secrets.ESPN_SWID }}
@@ -49,6 +57,7 @@ jobs:
           git -C page config user.email "cg-engine@users.noreply.github.com"
 
       - name: Refresh odds and publish
+        if: steps.gate.outputs.run == 'true'
         run: python publish_league.py
 
       - name: Weekly keep-alive
