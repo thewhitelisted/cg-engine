@@ -2,20 +2,17 @@ name: Publish league odds
 
 on:
   schedule:
-    - cron: "7,37 * * * *"      # every 30 minutes (GitHub may start scheduled runs a few minutes late)
+    - cron: "3,18,33,48 * * * *"   # kick-offs only: a run in a game window stays up and publishes every 10 min (loop.py)
   workflow_dispatch: {}
-
-concurrency:
-  group: publish
-  cancel-in-progress: false
 
 permissions:
   contents: write                # weekly keep-alive commit (scheduled workflows stop after 60 idle days)
+  actions: read                  # gate.py: skip while an earlier run is still publishing
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 350
     env:
       TZ: America/New_York       # game days are Eastern dates
     steps:
@@ -23,6 +20,8 @@ jobs:
 
       - name: Game hours?
         id: gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 gate.py
 
       - name: Check out the page repo
@@ -56,9 +55,9 @@ jobs:
           git -C page config user.name "cg-engine"
           git -C page config user.email "cg-engine@users.noreply.github.com"
 
-      - name: Refresh odds and publish
+      - name: Refresh odds and publish (every 10 min through the game window)
         if: steps.gate.outputs.run == 'true'
-        run: python publish_league.py
+        run: python loop.py
 
       - name: Weekly keep-alive
         if: github.event_name == 'schedule'

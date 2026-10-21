@@ -567,7 +567,7 @@ PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<meta http-equiv="refresh" content="600">
+<meta http-equiv="refresh" content="300">
 <title>The Cool Guys · League page</title>
 <style>
 :root { --bg: #f6f6f2; --card: #fcfcfb; --ink: #15171a; --ink2: #4d5056; --muted: #84878c; --rule: #e1e0d9;
@@ -654,7 +654,7 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
   <p class="note">Win chance: each team's chance to win at least 5 of the 9 categories by Sunday, from what's happened so
   far plus a projection of every remaining game. The strip under each bar is that chance through the week (blue share
   at the bottom, one column per day). Toss-ups: categories where either side has at least a 30% chance to win.
-  Games: player-games already played this week · scheduled games left. Refreshed every 30 minutes during games.</p>
+  Games: player-games already played this week · scheduled games left. Updated every 10 minutes during games.</p>
   %(today)s
   %(awards)s
   %(standings)s

@@ -1,4 +1,4 @@
-"""Refresh the public league page and push it to its GitHub Pages repo (run every 30 min by launchd).
+"""Refresh the public league page and push it to its GitHub Pages repo (cg-engine runs it every 10 min during games).
 
     python3 publish_league.py              # sync ESPN, rebuild the page, commit + push if the odds changed
 
@@ -45,7 +45,7 @@ def main():
     except Exception:
         sb = frac = None
     try:
-        tx = S.transactions(live["latest_scoring_period"])
+        tx = S.transactions(live["latest_scoring_period"], back=3)   # earlier moves are already counted in history.json
     except Exception as e:
         log(f"transactions unavailable: {type(e).__name__}: {e}")
         tx = None
