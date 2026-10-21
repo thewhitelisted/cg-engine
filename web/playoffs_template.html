@@ -1,0 +1,307 @@
+<title>Cool Guys Playoff Picture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: playoff war room. Team switch, the road to the title, then the field: seeds, bracket, weeks, opponents. */
+:root {
+  --bg: #f6f6f2;
+  --surface: #fcfcfb;
+  --ink: #15171a;
+  --ink-2: #4d5056;
+  --muted: #84878c;
+  --rule: #e1e0d9;
+  --axis: #c3c2b7;
+  --accent: #c8501e;
+  --accent-wash: rgba(200, 80, 30, 0.09);
+  --pos: #2a78d6;
+  --neg: #e34948;
+  --mid: #f0efec;
+  --on-strong: #ffffff;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+  --body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1011; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #8e8d87; --rule: #2c2c2a; --axis: #45453f;
+  --accent: #ec7a45; --accent-wash: rgba(236, 122, 69, 0.13); --pos: #3987e5; --neg: #e66767; --mid: #383835; --on-strong: #ffffff;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0f1011; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #8e8d87; --rule: #2c2c2a; --axis: #45453f;
+  --accent: #ec7a45; --accent-wash: rgba(236, 122, 69, 0.13); --pos: #3987e5; --neg: #e66767; --mid: #383835; --on-strong: #ffffff;
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); margin: 0; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 36px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 700; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.02; text-transform: uppercase; letter-spacing: .01em; }
+h2 { font-size: 24px; text-transform: uppercase; letter-spacing: .01em; }
+h3 { font-size: 17px; text-transform: uppercase; letter-spacing: .04em; }
+.eyebrow { font: 600 12px/1 var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+.sub { color: var(--ink-2); margin: 6px 0 0; max-width: 72ch; }
+.small { font-size: 13px; color: var(--muted); }
+section { display: grid; gap: 14px; min-width: 0; }
+.head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 18px; }
+.viewer { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 14px; padding: 10px 14px;
+  background: var(--surface); border: 1px solid var(--rule); border-left: 3px solid var(--accent); border-radius: 6px; }
+.viewer label { font: 600 13px var(--body); display: inline-flex; gap: 8px; align-items: center; }
+select { font: 500 15px var(--body); color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 5px; padding: 6px 10px; }
+select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* road to the title */
+.road { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; background: var(--surface);
+  border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+@media (max-width: 720px) { .road { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stage { padding: 14px 16px 16px; display: grid; gap: 4px; border-right: 1px solid var(--rule); position: relative; }
+.stage:last-child { border-right: 0; }
+.stage .k { font: 600 11.5px/1.2 var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.stage .v { font: 700 40px/1 var(--display); font-variant-numeric: tabular-nums; }
+.stage .c { font-size: 13px; color: var(--ink-2); }
+.stage .meter { height: 6px; border-radius: 3px; background: var(--mid); overflow: hidden; margin-top: 6px; }
+.stage .meter i { display: block; height: 100%; background: var(--accent); }
+.prize { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 14px; color: var(--ink-2); }
+.prize b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--rule); }
+th { font: 600 11.5px/1.2 var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--surface); }
+th.l, td.l { text-align: left; }
+th.c, td.c { text-align: center; }
+tr:last-child td { border-bottom: 0; }
+tr.me td { background: var(--accent-wash); }
+tr.me td.team { color: var(--accent); font-weight: 600; }
+td.cell { text-align: center; min-width: 52px; border: 2px solid var(--surface); font-weight: 500; }
+th button { all: unset; cursor: pointer; }
+th[aria-sort] button::after { content: " ▾"; }
+th[aria-sort="ascending"] button::after { content: " ▴"; }
+
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 860px) { .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; align-content: start; }
+.opp { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: center; font-variant-numeric: tabular-nums; }
+.opp .hd { font: 600 11px/1.2 var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.opp .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill { display: inline-block; min-width: 48px; text-align: center; padding: 2px 6px; border-radius: 10px; font-size: 13px; font-weight: 600; }
+
+/* bracket */
+.bracket { display: grid; grid-template-columns: repeat(3, minmax(170px, 1fr)); gap: 18px; min-width: 600px; padding: 14px 16px; }
+.round { display: grid; gap: 12px; align-content: space-around; }
+.round h3 { font-size: 14px; color: var(--muted); }
+.game { border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: var(--bg); }
+.game div { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px; font-size: 14px; }
+.game div + div { border-top: 1px solid var(--rule); }
+.game .fav { font-weight: 600; }
+.game .meme { color: var(--accent); }
+.game .sd { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+.game .p { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+svg text { fill: var(--ink-2); font: 12px var(--body); }
+.legend { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
+.ramp { width: 160px; height: 10px; border-radius: 5px; background: linear-gradient(90deg, var(--neg), var(--mid), var(--pos)); }
+.seq { width: 160px; height: 10px; border-radius: 5px; background: linear-gradient(90deg, var(--surface), var(--pos)); border: 1px solid var(--rule); }
+.notes { font-size: 13.5px; color: var(--ink-2); max-width: 82ch; display: grid; gap: 6px; }
+.notes p { margin: 0; }
+.tip { position: fixed; pointer-events: none; z-index: 5; background: var(--ink); color: var(--bg); font-size: 12.5px; line-height: 1.35; padding: 7px 9px; border-radius: 5px; max-width: 260px; }
+@media (prefers-reduced-motion: no-preference) { .stage .meter i { transition: width .3s; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">The Cool Guys · fantasy playoffs · March 8–28, 2027</span>
+    <h1>Playoff Picture</h1>
+    <p class="sub" id="lede"></p>
+    <div class="viewer">
+      <label for="viewer">Viewing as <select id="viewer"></select></label>
+      <span class="small">Pick your team. This device remembers the choice.</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="road-h">
+    <div class="head"><h2 id="road-h">Road to the title</h2><span class="small" id="road-sub"></span></div>
+    <div class="road" id="road"></div>
+    <div class="prize" id="prize"></div>
+  </section>
+
+  <section aria-labelledby="opp-h">
+    <div class="head"><h2 id="opp-h">Who you'd face</h2><span class="small">Chance of meeting each team if you reach that round, and your chance of beating them that week</span></div>
+    <div class="grid3" id="opps"></div>
+  </section>
+
+  <section aria-labelledby="br-h">
+    <div class="head"><h2 id="br-h">Bracket if the standings hold</h2><span class="small">Seeds by projected categories won; each game uses that playoff week's games and rest</span></div>
+    <div class="scroll"><div class="bracket" id="bracket"></div></div>
+  </section>
+
+  <section aria-labelledby="seed-h">
+    <div class="head"><h2 id="seed-h">Seeding odds</h2>
+      <div class="legend"><span>0%</span><span class="seq" aria-hidden="true"></span><span>50%+</span><span class="small">Seeds 1–8 make the bracket: 1 v 8, 4 v 5, 2 v 7, 3 v 6</span></div></div>
+    <div class="grid2">
+      <div class="scroll"><table id="seeds"></table></div>
+      <div class="panel"><h3 id="bys-h">Title odds by seed</h3><div id="byseed"></div><p class="small" id="bys-note"></p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="wk-h">
+    <div class="head"><h2 id="wk-h">The three playoff weeks</h2>
+      <div class="legend"><span>Weaker</span><span class="ramp" aria-hidden="true"></span><span>Stronger</span><span class="small">Chance to beat an average playoff opponent that week · roster games</span></div></div>
+    <div class="scroll"><table id="weeks"></table></div>
+    <div class="panel"><div class="head"><h3 id="pcat-h">Category strength in the playoff weeks</h3><span class="small">Chance to win each category against an average opponent, averaged over the three weeks</span></div>
+      <div class="scroll" style="border:0"><table id="pcats"></table></div></div>
+  </section>
+
+  <section aria-labelledby="con-h">
+    <div class="head"><h2 id="con-h">Contenders</h2><span class="small">Click a column to sort</span></div>
+    <div class="scroll"><table id="cont"></table></div>
+  </section>
+
+  <section class="notes" aria-labelledby="n-h">
+    <h3 id="n-h">How these numbers are made</h3>
+    <p id="method"></p>
+    <p>The regular season is played out on the real remaining schedule, each matchup with that week's NBA games. Seeding follows the category record (H2H each category). Each playoff round is a single week; the semifinal losers meet for third. Prizes: $150 / $90 / $60.</p>
+    <p>Playoff-week games include late-season rest, which is heavier on teams that were weak the season before. These are model estimates, not guarantees.</p>
+  </section>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById("data").textContent);
+  const T = D.teams, CATS = D.cats, WKS = D.playoff_weeks;
+  const pct = (x, d = 0) => x == null ? "—" : (100 * x).toFixed(d) + "%";
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const short = s => s.length > 16 ? s.slice(0, 15) + "…" : s;
+  const tip = document.getElementById("tip");
+  const showTip = (e, h) => { tip.innerHTML = h; tip.hidden = false;
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + "px";
+    tip.style.top = Math.min(e.clientY + 14, innerHeight - tip.offsetHeight - 8) + "px"; };
+  const hideTip = () => { tip.hidden = true; };
+  const div = p => { if (p == null) return "var(--surface)"; const s = Math.max(-1, Math.min(1, (p - 0.5) / 0.25));
+    return `color-mix(in oklab, ${s >= 0 ? "var(--pos)" : "var(--neg)"} ${Math.round(Math.abs(s) * 100)}%, var(--mid))`; };
+  const divInk = p => (p != null && Math.abs(p - 0.5) > 0.14) ? "var(--on-strong)" : "var(--ink)";
+  const seq = p => `color-mix(in oklab, var(--pos) ${Math.round(Math.min(1, p / 0.5) * 100)}%, var(--surface))`;
+  const seqInk = p => p > 0.3 ? "var(--on-strong)" : "var(--ink)";
+
+  let me = Math.max(0, T.findIndex(t => t.me));
+  const h = /^#t(\d+)$/.exec(location.hash);
+  if (h && T.some(t => t.id === +h[1])) me = T.findIndex(t => t.id === +h[1]);
+  else { try { const s = localStorage.getItem("po-viewer"); if (s != null && T.some(t => t.id === +s)) me = T.findIndex(t => t.id === +s); } catch (e) {} }
+
+  const order = [...T.keys()].sort((a, b) => T[b].p_1st - T[a].p_1st);
+  document.getElementById("lede").textContent =
+    `How each team's season ends, from ${D.notes.rollouts.toLocaleString()} simulated seasons as of ${D.generated}` +
+    (D.completed_weeks.length ? `, after matchup ${Math.max(...D.completed_weeks)}.` : ", before the first matchup.");
+  document.getElementById("method").textContent =
+    `Projection set "${D.notes.proj}", ${D.notes.rollouts.toLocaleString()} simulated true seasons × ${D.notes.seasons_per_rollout} league runs.` +
+    (D.notes.unmodeled.length ? ` Not modeled (replacement level): ${D.notes.unmodeled.join(", ")}.` : "");
+  const viewer = document.getElementById("viewer");
+  viewer.innerHTML = order.map(i => `<option value="${T[i].id}">${esc(T[i].name)}</option>`).join("");
+
+  function drawRoad() {
+    const t = T[me];
+    document.getElementById("road-sub").textContent = t.name;
+    const st = [
+      ["Make playoffs", t.p_playoffs, `Top-8 finish · ${t.exp_cats} projected category wins`],
+      ["Reach semifinal", t.p_semis, `Wins the ${WKS[0]} quarterfinal ${pct(t.p_semis / t.p_playoffs)} of the time`],
+      ["Reach final", t.p_final, `Wins the ${WKS[1]} semifinal ${pct(t.p_final / t.p_semis)}`],
+      ["Win the title", t.p_1st, `Wins the ${WKS[2]} final ${pct(t.p_1st / t.p_final)}`],
+    ];
+    document.getElementById("road").innerHTML = st.map(([k, p, c]) =>
+      `<div class="stage"><span class="k">${k}</span><span class="v">${pct(p, k === "Win the title" ? 1 : 0)}</span><span class="c">${c}</span><span class="meter"><i style="width:${(100 * p).toFixed(1)}%"></i></span></div>`).join("");
+    document.getElementById("prize").innerHTML =
+      `<span>Expected winnings <b>$${t.exp_dollars.toFixed(2)}</b></span><span>1st ($150) <b>${pct(t.p_1st, 1)}</b></span>` +
+      `<span>2nd ($90) <b>${pct(t.p_2nd, 1)}</b></span><span>3rd ($60) <b>${pct(t.p_3rd, 1)}</b></span>`;
+  }
+
+  function drawOpps() {
+    const t = T[me];
+    const block = (title, list, reach, wk) => {
+      const rows = list.slice(0, 6).map(o => {
+        const pf = o.p_face / reach;
+        return `<span class="nm">${esc(T[o.opp].name)}</span><span>${pct(pf)}</span><span class="pill" style="background:${div(o.p_beat)};color:${divInk(o.p_beat)}">${pct(o.p_beat)}</span>`;
+      }).join("");
+      return `<div class="panel"><div class="head"><h3>${title}</h3><span class="small">${wk}</span></div>` +
+        (reach > 0.001 ? `<div class="opp"><span class="hd">Opponent</span><span class="hd">Meet</span><span class="hd">You win</span>${rows}</div>` : `<p class="small">Rarely gets this far.</p>`) + `</div>`;
+    };
+    document.getElementById("opps").innerHTML =
+      block("Quarterfinal", t.qf, t.p_playoffs, WKS[0]) + block("Semifinal", t.sf, t.p_semis, WKS[1]) + block("Final", t.final, t.p_final, WKS[2]);
+  }
+
+  function drawBracket() {
+    const proj = [...T.keys()].sort((a, b) => T[b].exp_cats - T[a].exp_cats).slice(0, 8);   // seeds 1..8
+    const pw = (a, b, k) => D.pw_playoff[a][b][k];
+    const game = (a, b, k) => {
+      const pa = pw(a, b, k), fa = pa >= 0.5;
+      const row = (x, p, fav) => `<div class="${fav ? "fav" : ""} ${x === me ? "meme" : ""}"><span><span class="sd">${proj.indexOf(x) + 1}</span>${esc(short(T[x].name))}</span><span class="p">${pct(p)}</span></div>`;
+      return { html: `<div class="game">${row(a, pa, fa)}${row(b, 1 - pa, !fa)}</div>`, win: fa ? a : b };
+    };
+    const pairs = [[0, 7], [3, 4], [1, 6], [2, 5]].map(([x, y]) => game(proj[x], proj[y], 0));
+    const sf = [game(pairs[0].win, pairs[1].win, 1), game(pairs[2].win, pairs[3].win, 1)];
+    const fin = game(sf[0].win, sf[1].win, 2);
+    document.getElementById("bracket").innerHTML =
+      `<div class="round"><h3>Quarterfinals · ${WKS[0]}</h3>${pairs.map(g => g.html).join("")}</div>` +
+      `<div class="round"><h3>Semifinals · ${WKS[1]}</h3>${sf.map(g => g.html).join("")}</div>` +
+      `<div class="round"><h3>Final · ${WKS[2]}</h3>${fin.html}<p class="small">Favourite: ${esc(T[fin.win].name)}</p></div>`;
+  }
+
+  function drawSeeds() {
+    const tb = document.getElementById("seeds");
+    tb.innerHTML = `<thead><tr><th class="l">Team</th>${[1, 2, 3, 4, 5, 6, 7, 8].map(s => `<th class="c">${s}</th>`).join("")}<th class="c">Miss</th></tr></thead><tbody>` +
+      order.map(i => { const t = T[i], miss = 1 - t.p_playoffs;
+        return `<tr class="${i === me ? "me" : ""}"><td class="l team">${esc(short(t.name))}</td>` +
+          t.p_seed.map((p, k) => `<td class="cell" data-tip="${esc(t.name)}: seed ${k + 1} in ${pct(p, 1)} of seasons" style="background:${seq(p)};color:${seqInk(p)}">${pct(p)}</td>`).join("") +
+          `<td class="cell" data-tip="${esc(t.name)} misses the playoffs in ${pct(miss, 1)} of seasons" style="background:${div(0.5 - miss / 2)};color:${divInk(0.5 - miss / 2)}">${pct(miss)}</td></tr>`; }).join("") + `</tbody>`;
+    const t = T[me], v = t.title_by_seed;
+    const W = 420, H = 190, L0 = 34, B = 28, bw = (W - L0 - 8) / 8, mx = Math.max(0.05, ...v.filter(x => x != null)) * 1.15;
+    let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Title odds by seed for ${esc(t.name)}">`;
+    [0, 0.5, 1].forEach(f => { const y = H - B - f * (H - B - 12);
+      s += `<line x1="${L0}" x2="${W - 4}" y1="${y}" y2="${y}" stroke="var(--rule)"/><text x="${L0 - 6}" y="${y + 4}" text-anchor="end">${pct(f * mx)}</text>`; });
+    v.forEach((p, k) => { const x = L0 + k * bw + 4, hgt = p == null ? 0 : (p / mx) * (H - B - 12);
+      s += `<rect x="${x}" y="${H - B - hgt}" width="${bw - 8}" height="${hgt}" rx="3" fill="${k < 1 ? "var(--accent)" : "var(--pos)"}"><title>Seed ${k + 1}: ${pct(p, 1)}</title></rect>`;
+      s += `<text x="${x + (bw - 8) / 2}" y="${H - 10}" text-anchor="middle">${k + 1}</text>`;
+      if (p != null) s += `<text x="${x + (bw - 8) / 2}" y="${H - B - hgt - 4}" text-anchor="middle">${pct(p)}</text>`; });
+    document.getElementById("byseed").innerHTML = s + `</svg>`;
+    document.getElementById("bys-h").textContent = `${t.name}: title odds by seed`;
+    document.getElementById("bys-note").textContent = "Chance of winning the title given each finishing seed. A higher seed means a weaker first-round opponent.";
+  }
+
+  function drawWeeks() {
+    document.getElementById("weeks").innerHTML = `<thead><tr><th class="l">Team</th>${WKS.map((w, k) => `<th class="c">${["Quarterfinal", "Semifinal", "Final"][k]}<br>${w}</th>`).join("")}<th>Total games</th></tr></thead><tbody>` +
+      order.map(i => { const t = T[i];
+        return `<tr class="${i === me ? "me" : ""}"><td class="l team">${esc(t.name)}</td>` +
+          t.po_week_win.map((p, k) => `<td class="cell" data-tip="${esc(t.name)}, ${WKS[k]}: ${t.po_games[k]} roster games, beats an average playoff opponent ${pct(p, 1)}" style="background:${div(p)};color:${divInk(p)}">${pct(p)} · ${t.po_games[k]}g</td>`).join("") +
+          `<td>${t.po_games.reduce((a, b) => a + b, 0)}</td></tr>`; }).join("") + `</tbody>`;
+    document.getElementById("pcats").innerHTML = `<thead><tr><th class="l">Team</th>${CATS.map(c => `<th class="c">${c}</th>`).join("")}</tr></thead><tbody>` +
+      order.map(i => { const t = T[i];
+        return `<tr class="${i === me ? "me" : ""}"><td class="l team">${esc(short(t.name))}</td>` +
+          CATS.map(c => { const p = t.po_cat_win[c]; return `<td class="cell" style="background:${div(p)};color:${divInk(p)}">${pct(p)}</td>`; }).join("") + `</tr>`; }).join("") + `</tbody>`;
+  }
+
+  const cols = [["name", "Team", "l"], ["p_playoffs", "Playoffs"], ["p_semis", "Semis"], ["p_final", "Final"], ["p_1st", "Title"],
+                ["p_2nd", "2nd"], ["p_3rd", "3rd"], ["exp_dollars", "Exp. winnings"], ["exp_cats", "Proj. cat wins"]];
+  let sortKey = "p_1st", asc = false;
+  const cont = document.getElementById("cont");
+  function drawCont() {
+    const rows = [...T.keys()].sort((a, b) => sortKey === "name" ? T[a].name.localeCompare(T[b].name) * (asc ? 1 : -1) : (T[a][sortKey] - T[b][sortKey]) * (asc ? 1 : -1));
+    const f = (k, v) => k === "name" ? esc(v) : k === "exp_dollars" ? "$" + v.toFixed(2) : k === "exp_cats" ? v.toFixed(1) : pct(v, k === "p_1st" || k === "p_2nd" || k === "p_3rd" ? 1 : 0);
+    cont.innerHTML = `<thead><tr>${cols.map(([k, l, c]) => `<th class="${c || ""}" ${k === sortKey ? `aria-sort="${asc ? "ascending" : "descending"}"` : ""}><button data-k="${k}">${l}</button></th>`).join("")}</tr></thead><tbody>` +
+      rows.map(i => `<tr class="${i === me ? "me" : ""}">${cols.map(([k, , c]) => `<td class="${c || ""} ${k === "name" ? "team" : ""}">${f(k, T[i][k])}</td>`).join("")}</tr>`).join("") + `</tbody>`;
+  }
+  cont.addEventListener("click", e => { const b = e.target.closest("button[data-k]"); if (!b) return;
+    const k = b.dataset.k; asc = k === sortKey ? !asc : k === "name"; sortKey = k; drawCont(); });
+
+  for (const id of ["seeds", "weeks"]) {
+    const el = document.getElementById(id);
+    el.addEventListener("pointermove", e => { const c = e.target.closest("[data-tip]"); c ? showTip(e, c.dataset.tip) : hideTip(); });
+    el.addEventListener("pointerleave", hideTip);
+  }
+  function drawAll() { viewer.value = String(T[me].id); drawRoad(); drawOpps(); drawBracket(); drawSeeds(); drawWeeks(); drawCont(); }
+  viewer.addEventListener("change", () => { me = T.findIndex(t => t.id === +viewer.value);
+    try { localStorage.setItem("po-viewer", viewer.value); } catch (e) {} drawAll(); });
+  drawAll();
+})();
+</script>

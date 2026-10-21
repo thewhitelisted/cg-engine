@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cool Guys Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: courtside scoreboard. One big number, the category board, then tonight's players and games. */
+:root {
+  --bg: #f6f6f2; --surface: #fcfcfb; --ink: #15171a; --ink-2: #4d5056; --muted: #84878c; --rule: #e1e0d9; --axis: #c3c2b7;
+  --accent: #c8501e; --accent-wash: rgba(200, 80, 30, 0.09); --pos: #2a78d6; --neg: #e34948; --mid: #f0efec; --on-strong: #fff;
+  --live: #2e7a57;
+  --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #0f1011; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #8e8d87; --rule: #2c2c2a; --axis: #45453f;
+  --accent: #ec7a45; --accent-wash: rgba(236, 122, 69, 0.13); --pos: #3987e5; --neg: #e66767; --mid: #383835; --live: #63c497;
+  color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 56px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
+.top > div, .status { min-width: 0; }
+.status { flex-wrap: wrap; }
+h1, h2, h3 { font-family: var(--display); font-weight: 700; margin: 0; text-transform: uppercase; letter-spacing: .01em; }
+h1 { font-size: clamp(28px, 4.5vw, 40px); }
+h2 { font-size: 22px; }
+.top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 16px; }
+.status { font-size: 13px; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.dot.ok { background: var(--live); } .dot.err { background: var(--neg); }
+.hero { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 24px; align-items: center; background: var(--surface);
+  border: 1px solid var(--rule); border-radius: 8px; padding: 18px 22px; }
+@media (max-width: 640px) { .hero { grid-template-columns: minmax(0, 1fr); } }
+.big { font: 700 72px/0.9 var(--display); font-variant-numeric: tabular-nums; }
+.big small { font-size: 22px; color: var(--muted); margin-left: 6px; }
+.vs { color: var(--ink-2); font-size: 15px; }
+.spark { width: 100%; height: 90px; }
+.spark text { fill: var(--muted); font: 11px var(--body); }
+.board { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; font-variant-numeric: tabular-nums; }
+.board th, .board td { padding: 9px 12px; border-bottom: 1px solid var(--rule); text-align: right; white-space: nowrap; }
+.board th { font: 600 11.5px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.board td:first-child, .board th:first-child { text-align: left; font-weight: 600; }
+.board tr:last-child td { border-bottom: 0; }
+.pbar { display: grid; grid-template-columns: 46px 160px; gap: 8px; align-items: center; justify-content: end; }
+.track { position: relative; height: 10px; background: var(--mid); border-radius: 5px; overflow: hidden; }
+.track i { position: absolute; top: 0; bottom: 0; }
+.track b { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--axis); }
+.tag { font: 600 11px var(--body); letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 10px; border: 1px solid currentColor; }
+.tag.swing { color: var(--accent); } .tag.locked { color: var(--pos); } .tag.lost { color: var(--neg); }
+.scroll { overflow-x: auto; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 820px) { .two { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: grid; gap: 8px; min-width: 0; }
+.pl { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.pl td, .pl th { padding: 5px 6px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--rule); }
+.pl th { font: 600 11px var(--body); letter-spacing: .06em; color: var(--muted); text-transform: uppercase; }
+.pl td:first-child, .pl th:first-child { text-align: left; }
+.pl tr.bench td { color: var(--muted); }
+.gs { font-size: 12px; color: var(--muted); }
+.gs.in { color: var(--live); font-weight: 600; }
+.games { display: flex; flex-wrap: wrap; gap: 8px; }
+.game { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; font-size: 13.5px; }
+.game .gs { margin-left: 8px; }
+.note { font-size: 13px; color: var(--muted); max-width: 80ch; }
+.err { color: var(--neg); font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>Cool Guys Live</h1><div class="vs" id="vs">Connecting…</div></div>
+    <div class="status"><span class="dot" id="dot"></span><span id="upd">waiting for first update</span></div>
+  </div>
+  <div class="err" id="err" hidden></div>
+
+  <div class="hero">
+    <div><div class="big" id="pwin">—</div><div class="vs">chance to win the week</div><div class="vs" id="left"></div></div>
+    <svg class="spark" id="spark" viewBox="0 0 600 90" preserveAspectRatio="none" role="img" aria-label="Win chance over time"></svg>
+  </div>
+
+  <section>
+    <h2>Categories</h2>
+    <div class="scroll"><table class="board" id="board"></table></div>
+  </section>
+
+  <section class="two">
+    <div class="panel"><h2 id="me-h">Your players today</h2><div class="scroll"><table class="pl" id="me"></table></div></div>
+    <div class="panel"><h2 id="op-h">Their players today</h2><div class="scroll"><table class="pl" id="op"></table></div></div>
+  </section>
+
+  <section><h2>Games today</h2><div class="games" id="games"></div></section>
+  <section><h2>Around the league</h2><div class="scroll"><table class="board" id="league"></table></div></section>
+  <p class="note" id="note"></p>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const pct = (x, d = 0) => x == null ? "—" : (100 * x).toFixed(d) + "%";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const val = (v, cat) => v == null ? "—" : cat.includes("%") ? v.toFixed(3).replace(/^0/, "") : Math.round(v);
+const SLOT = { 0: "PG", 1: "SG", 2: "SF", 3: "PF", 4: "C", 5: "G", 6: "F", 11: "UTIL", 12: "BE", 13: "IR" };
+
+function bar(p) {
+  const w = Math.abs(p - 0.5) * 100, left = p >= 0.5 ? 50 : 50 - w;
+  return `<span class="pbar"><span>${pct(p)}</span><span class="track"><i style="left:${left}%;width:${w}%;background:${p >= 0.5 ? "var(--pos)" : "var(--neg)"}"></i><b></b></span></span>`;
+}
+function spark(h) {
+  const s = $("spark");
+  if (!h || h.length < 2) { s.innerHTML = `<text x="8" y="50">The chart fills in as updates arrive</text>`; return; }
+  const W = 600, H = 90, n = h.length, x = i => 8 + (W - 16) * i / (n - 1), y = p => 6 + (H - 22) * (1 - p);
+  const pts = h.map((d, i) => `${x(i).toFixed(1)},${y(d[1]).toFixed(1)}`).join(" ");
+  s.innerHTML = `<line x1="8" x2="${W - 8}" y1="${y(0.5)}" y2="${y(0.5)}" stroke="var(--axis)" stroke-dasharray="3 3"/>
+    <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+    <circle cx="${x(n - 1)}" cy="${y(h[n - 1][1])}" r="4" fill="var(--accent)"/>
+    <text x="8" y="${H - 2}">${esc(h[0][0])}</text><text x="${W - 8}" y="${H - 2}" text-anchor="end">${esc(h[n - 1][0])}</text>
+    <text x="${W - 8}" y="${y(0.5) - 4}" text-anchor="end">50%</text>`;
+}
+function players(rows) {
+  const head = `<tr><th>Player</th><th>Slot</th><th>Game</th><th>MIN</th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>3PM</th><th>TO</th><th>FG</th></tr>`;
+  const sorted = [...rows].sort((a, b) => (a.game ? 0 : 1) - (b.game ? 0 : 1) || (a.slot >= 12) - (b.slot >= 12));
+  return head + sorted.map(r => {
+    const l = r.line || {}, g = r.game, has = Object.keys(l).length > 0;
+    const gs = !g ? `<span class="gs">no game</span>` : `<span class="gs ${g.state === "in" ? "in" : ""}">${esc(g.detail)}</span>`;
+    const n = k => has ? Math.round(l[k] || 0) : "";
+    return `<tr class="${r.slot >= 12 ? "bench" : ""}"><td>${esc(r.name)}${r.inj && r.inj !== "ACTIVE" ? ` <span class="gs">${esc(r.inj.replace("_", " ").toLowerCase())}</span>` : ""}</td>
+      <td>${SLOT[r.slot] || r.slot}</td><td>${gs}</td><td>${n("min")}</td><td>${n("pts")}</td><td>${n("reb")}</td><td>${n("ast")}</td>
+      <td>${n("stl")}</td><td>${n("blk")}</td><td>${n("tpm")}</td><td>${n("tov")}</td><td>${has ? `${Math.round(l.fgm || 0)}-${Math.round(l.fga || 0)}` : ""}</td></tr>`;
+  }).join("");
+}
+async function refresh() {
+  let s;
+  try { s = await (await fetch("/api/state", { cache: "no-store" })).json(); }
+  catch (e) { $("dot").className = "dot err"; $("upd").textContent = "Can't reach the live server. Is python3 live_server.py running?"; return; }
+  $("dot").className = "dot " + (s.status === "ok" ? "ok" : s.status === "error" ? "err" : "");
+  $("upd").textContent = s.updated ? `updated ${s.updated.slice(11, 19)} · every ${s.refresh_s || 45} s` : "waiting for first update";
+  $("err").hidden = !s.error; $("err").textContent = s.error ? `Last update failed: ${s.error}` : "";
+  if (s.p_win == null) return;
+  $("vs").textContent = `${s.me} vs ${s.opponent} · matchup ${s.period}`;
+  $("pwin").innerHTML = `${pct(s.p_win)}`;
+  $("left").textContent = `Expected games left: you ${s.games_left.me.toFixed(0)}, them ${s.games_left.opp.toFixed(0)}`;
+  spark(s.history);
+  $("board").innerHTML = `<tr><th>Category</th><th>You</th><th>Them</th><th>Projected final</th><th>Your chance</th><th></th></tr>` +
+    s.cats.map(c => { const tag = c.p > 0.97 ? "locked" : c.p < 0.03 ? "lost" : c.p >= 0.25 && c.p <= 0.75 ? "swing" : "";
+      return `<tr><td>${c.cat}</td><td>${val(c.me_now, c.cat)}</td><td>${val(c.opp_now, c.cat)}</td>
+        <td>${val(c.me_final, c.cat)} – ${val(c.opp_final, c.cat)}</td><td>${bar(c.p)}</td><td>${tag ? `<span class="tag ${tag}">${tag}</span>` : ""}</td></tr>`; }).join("");
+  $("me-h").textContent = `${s.me} today`; $("op-h").textContent = `${s.opponent} today`;
+  $("me").innerHTML = players(s.tonight.me); $("op").innerHTML = players(s.tonight.opp);
+  $("games").innerHTML = s.games.length ? s.games.map(g => `<span class="game">${esc(g.line)}<span class="gs ${g.state === "in" ? "in" : ""}">${esc(g.detail)}</span></span>`).join("") : `<span class="note">No NBA games today.</span>`;
+  $("league").innerHTML = `<tr><th>Home</th><th>Away</th><th>Home wins the week</th></tr>` +
+    s.league.map(m => `<tr><td>${esc(m.home)}</td><td style="text-align:left">${esc(m.away)}</td><td>${bar(m.p_home)}</td></tr>`).join("");
+  $("note").textContent = (s.in_game_note ? s.in_game_note + " " : "") +
+    "Projections: known totals so far plus each player's remaining games this week (validated model). Bench players' stats don't count.";
+}
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>

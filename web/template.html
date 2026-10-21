@@ -1,0 +1,238 @@
+<title>Cool Guys Draft Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: scoreboard header, strategy strip, round-by-round plan, then the full big board table. */
+:root {
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --ink: #15202b;
+  --muted: #5b6875;
+  --line: #d9dfe5;
+  --accent: #d4561a;
+  --accent-soft: #fbe7dc;
+  --pos: #1f8a5b;
+  --pos-bg: rgba(31,138,91,.16);
+  --neg: #c2413b;
+  --neg-bg: rgba(194,65,59,.15);
+  --row-hover: #eef2f5;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f151b; --surface: #17202a; --ink: #e6ebf0; --muted: #93a1ae; --line: #2a3643;
+  --accent: #f07a3c; --accent-soft: #3a2418; --pos: #4cc48b; --pos-bg: rgba(76,196,139,.18);
+  --neg: #ef6b64; --neg-bg: rgba(239,107,100,.18); --row-hover: #1d2834; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0f151b; --surface: #17202a; --ink: #e6ebf0; --muted: #93a1ae; --line: #2a3643;
+  --accent: #f07a3c; --accent-soft: #3a2418; --pos: #4cc48b; --pos-bg: rgba(76,196,139,.18);
+  --neg: #ef6b64; --neg-bg: rgba(239,107,100,.18); --row-hover: #1d2834; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--body); margin: 0; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 16px; padding-block: 24px 64px; display: grid; gap: 28px; }
+h1, h2 { font-family: var(--display); font-weight: 700; letter-spacing: .01em; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); line-height: 1; text-transform: uppercase; }
+h2 { font-size: 1.6rem; text-transform: uppercase; }
+.eyebrow { font: 600 .75rem/1 var(--body); text-transform: uppercase; letter-spacing: .12em; color: var(--accent); }
+.muted { color: var(--muted); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+header { display: grid; gap: 10px; border-bottom: 3px solid var(--ink); padding-bottom: 18px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 22px; color: var(--muted); }
+.meta b { color: var(--ink); font-weight: 600; }
+
+.strip { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 28px; }
+@media (max-width: 820px) { .strip { grid-template-columns: 1fr; } }
+.strip section { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.strip p { margin: 0; max-width: 62ch; }
+.bars { display: grid; gap: 6px; }
+.bar { display: grid; grid-template-columns: 3.4rem 1fr 3rem; align-items: center; gap: 10px; }
+.bar .lbl { font: 600 .85rem var(--display); letter-spacing: .04em; }
+.bar .track { height: 12px; background: var(--line); border-radius: 2px; position: relative; overflow: hidden; }
+.bar .fill { position: absolute; inset: 0 auto 0 0; background: var(--ink); }
+.bar .fill.punt { background: var(--neg); }
+.bar .fill.strong { background: var(--pos); }
+.bar .mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--muted); }
+
+.rounds { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.rnd { background: var(--surface); border: 1px solid var(--line); padding: 10px 12px; display: grid; gap: 4px; align-content: start; }
+.rnd .hd { display: flex; justify-content: space-between; align-items: baseline; }
+.rnd .pk { font: 700 1.3rem/1 var(--display); }
+.rnd .rd { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.rnd ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.rnd li { display: flex; justify-content: space-between; gap: 8px; font-size: .86rem; }
+.rnd li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rnd li .num { color: var(--muted); }
+.rnd li:first-child { font-weight: 600; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.controls input[type=search], .controls select {
+  font: inherit; padding: 6px 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 3px; }
+.controls input[type=search] { min-width: 0; flex: 1 1 200px; max-width: 320px; }
+.controls label { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+.controls button { font: 600 .85rem var(--body); padding: 6px 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 3px; cursor: pointer; }
+.controls button:hover { border-color: var(--ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.tablebox { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); }
+table { border-collapse: collapse; width: 100%; font-size: .84rem; }
+th, td { padding: 5px 7px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+th { position: sticky; top: 0; background: var(--surface); font: 600 .78rem var(--display); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); cursor: pointer; user-select: none; }
+th.sorted { color: var(--accent); }
+td.name, th.name { text-align: left; }
+td.name { font-weight: 500; }
+td.name small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--row-hover); }
+tbody tr.gone { opacity: .35; text-decoration: line-through; }
+tbody tr.gone td.z { background: none !important; }
+td.z { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+td.gap-pos { color: var(--pos); font-weight: 600; }
+td.gap-neg { color: var(--neg); }
+.inj { display: inline-block; font: 600 .65rem var(--body); letter-spacing: .06em; padding: 1px 5px; border-radius: 2px; background: var(--neg-bg); color: var(--neg); margin-left: 6px; vertical-align: 1px; }
+.av { display: inline-block; min-width: 2.6rem; padding: 1px 4px; border-radius: 2px; }
+.mine { color: var(--accent); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .8rem; color: var(--muted); }
+.notes { display: grid; gap: 8px; max-width: 75ch; }
+.notes p { margin: 0; }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">The Cool Guys · 2026–27 draft prep</span>
+    <h1>Slot 12 Draft Board</h1>
+    <div class="meta">
+      <span>Draft <b>Sat Oct 17, 8:30 PM EDT</b></span>
+      <span>Your picks <b id="mypicks" class="num"></b></span>
+      <span>Format <b>H2H each category, 9-cat, 12 teams, 13 roster</b></span>
+    </div>
+  </header>
+
+  <div class="strip">
+    <section>
+      <h2>What the simulations say</h2>
+      <p id="summary"></p>
+      <p class="muted">The live assistant (<span class="num">python3 draft.py</span>) re-runs this on every pick using the actual board. Use this page to prepare and as a backup if the script stalls.</p>
+    </section>
+    <section>
+      <h2>Typical end-of-draft team</h2>
+      <div class="bars" id="bars"></div>
+      <p class="muted">Average chance your simulated roster beats an opponent in each category in a regular week. The centre line is 50%.</p>
+    </section>
+  </div>
+
+  <section style="display:grid;gap:12px">
+    <h2>Round by round</h2>
+    <p class="muted" style="margin:0">Who the tool took at each of your picks across <span id="nsims"></span> simulated drafts. Share of drafts shown on the right.</p>
+    <div class="rounds" id="rounds"></div>
+  </section>
+
+  <section style="display:grid;gap:12px">
+    <h2>Big board</h2>
+    <div class="controls">
+      <input type="search" id="q" placeholder="Search player or team" aria-label="Search">
+      <select id="pos" aria-label="Position filter">
+        <option value="">All positions</option><option>PG</option><option>SG</option><option>SF</option><option>PF</option><option>C</option>
+      </select>
+      <select id="avpick" aria-label="Availability at pick"></select>
+      <label><input type="checkbox" id="hide"> Hide drafted</label>
+      <button id="reset" type="button">Clear drafted marks</button>
+    </div>
+    <div class="legend">
+      <span>Click a row to mark it drafted (saved in this browser only).</span>
+      <span><b>Val</b> category value, H2H-weighted z-score sum</span>
+      <span><b>Gap</b> ADP minus our rank. Positive means the market lets him fall.</span>
+      <span><b>GP</b> ESPN projection → our calibrated estimate</span>
+    </div>
+    <div class="tablebox"><table id="t"><thead></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="notes">
+    <h2>How this was built</h2>
+    <p>Each pick is chosen to maximise your chance of winning the title in this league's exact format: 19 regular-season weeks ranked by categories won, then an 8-team bracket over Mar 8 to Mar 28. For every candidate the tool simulates the rest of the draft and the season hundreds of times.</p>
+    <p>Player forecasts combine ESPN's projections, a model of each player's last three seasons, and the draft market. How much the market knows changes from year to year: in 2021-22 and 2023-24 it was clearly right where it disagreed with projections, in 2025-26 it was not. So the market's weight is not a fixed number. Each simulated season draws its own weight from the range seen across past seasons, which makes the tool favour players where the market and the projections agree and demand more before reaching on a player far ahead of his ADP.</p>
+    <p>One more correction matters a lot in this league: ESPN's ADP follows ESPN's points-league ranking almost exactly, while your league scores 9 categories. The tool separates that format difference from the market's real information and only lets the information move its forecasts. That is why points-league favourites can sit below their ADP here and category specialists above it.</p>
+    <p>These forecasts were chosen by a pre-registered test that scores the whole predicted distribution of every player's season on seasons held out from fitting. Games played are recalibrated, players on last season's weak teams are discounted in the fantasy playoffs, and weekly uncertainty is calibrated against real weeks.</p>
+    <p>Honest limits: three clean past seasons cannot say whether 2026-27 will be a year where the market is right; the tool hedges rather than guesses. Any single season can swing on injuries to a few players near your pick. Every decision and test is logged in DECISIONS.md.</p>
+  </section>
+</div>
+
+<script>
+const D = __DATA__;
+const CATS = ["FG%","FT%","3PM","REB","AST","STL","BLK","TO","PTS"];
+const $ = s => document.querySelector(s);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+let gone = new Set(store.get("gone", []));
+let sortKey = "vrank", sortDir = 1;
+
+$("#mypicks").textContent = D.my_picks.join(" · ");
+$("#nsims").textContent = D.n_drafts;
+
+// summary sentence from punt frequencies
+const punts = Object.entries(D.punt_freq).filter(([, f]) => f >= 0.15).sort((a, b) => b[1] - a[1]);
+const strong = Object.entries(D.cat_profile).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([c]) => c);
+$("#summary").textContent = punts.length
+  ? `From slot 12 the best builds usually punt ${punts.map(([c, f]) => `${c} (${Math.round(f*100)}% of drafts)`).join(" and ")}. Guards with high assists go early at ESPN ADP, so the value at the turn sits in wings and bigs. The typical roster leans on ${strong.join(", ")}. Treat the punt as an outcome the tool reaches, not a rule. If a top assist player falls to you, the live tool will say so.`
+  : `No category is consistently punted. The typical roster leans on ${strong.join(", ")}.`;
+
+// category bars
+$("#bars").innerHTML = CATS.map(c => {
+  const p = D.cat_profile[c], cls = p < 0.3 ? "punt" : p > 0.62 ? "strong" : "";
+  return `<div class="bar"><span class="lbl">${c}</span><span class="track"><span class="fill ${cls}" style="width:${(p*100).toFixed(0)}%"></span><span class="mid"></span></span><span class="num">${Math.round(p*100)}%</span></div>`;
+}).join("");
+
+// rounds
+$("#rounds").innerHTML = D.rounds.map(r => `<div class="rnd"><div class="hd"><span class="pk">Pick ${r.pick}</span><span class="rd">Round ${r.round}</span></div>
+  <ol>${r.picks.slice(0,5).map(p => `<li><span>${p.name}</span><span class="num">${Math.round(p.freq*100)}%</span></li>`).join("")}</ol></div>`).join("");
+
+// availability selector
+$("#avpick").innerHTML = D.my_picks.map((p, i) => `<option value="${i}">Available at pick ${p}</option>`).join("");
+$("#avpick").value = String(store.get("avpick", 2));
+
+const cols = [
+  { k: "vrank", t: "#", f: p => p.vrank },
+  { k: "name", t: "Player", cls: "name", f: p => p.name, html: p => `${p.name}<small>${p.team} · ${p.pos}</small>${p.injury && p.injury !== "ACTIVE" ? `<span class="inj">${p.injury.replace("_"," ")}</span>` : ""}` },
+  { k: "adp", t: "ADP", f: p => p.adp ?? 999, html: p => p.adp ?? "–" },
+  { k: "gap", t: "Gap", f: p => p.adp ? p.adp - p.vrank : -999, html: p => p.adp ? fmtGap(p.adp - p.vrank) : "", cl: p => p.adp ? (p.adp - p.vrank >= 8 ? "gap-pos" : p.adp - p.vrank <= -8 ? "gap-neg" : "") : "" },
+  { k: "value", t: "Val", f: p => p.value, html: p => p.value.toFixed(2) },
+  { k: "gp", t: "GP", f: p => p.gp, html: p => `<span class="muted">${p.espn_gp}→</span>${p.gp}` },
+  ...CATS.map(c => ({ k: "c:" + c, t: c, f: p => p.cats[c], html: p => p.cats[c].toFixed(1), z: true, c })),
+  { k: "avail", t: "Avail", f: p => p.avail[+$("#avpick").value], html: p => { const a = p.avail[+$("#avpick").value]; return `<span class="av" style="background:${heat(a*2-1, .55)}">${Math.round(a*100)}%</span>`; } },
+  { k: "mine", t: "Tool took", f: p => p.mine, html: p => p.mine ? `<span class="mine">${Math.round(p.mine*100)}%</span>` : "" },
+];
+function fmtGap(g) { const r = Math.round(g); return (r > 0 ? "+" : "") + r; }
+function heat(z, cap = 1) {
+  const a = Math.min(Math.abs(z) / 2, 1) * cap;
+  if (Math.abs(z) < 0.15) return "transparent";
+  return z > 0 ? `color-mix(in srgb, var(--pos) ${Math.round(a*45)}%, transparent)` : `color-mix(in srgb, var(--neg) ${Math.round(a*45)}%, transparent)`;
+}
+
+function render() {
+  $("#t thead").innerHTML = "<tr>" + cols.map(c => `<th class="${c.cls||""} ${sortKey===c.k?"sorted":""}" data-k="${c.k}">${c.t}${sortKey===c.k?(sortDir>0?" ↑":" ↓"):""}</th>`).join("") + "</tr>";
+  const q = $("#q").value.trim().toLowerCase(), pos = $("#pos").value, hide = $("#hide").checked;
+  const col = cols.find(c => c.k === sortKey);
+  const rows = D.players.filter(p => (!q || (p.name + " " + p.team).toLowerCase().includes(q)) && (!pos || p.pos.split("/").includes(pos)) && !(hide && gone.has(p.name)))
+    .sort((a, b) => { const x = col.f(a), y = col.f(b); return (x < y ? -1 : x > y ? 1 : 0) * sortDir; });
+  $("#t tbody").innerHTML = rows.map(p => `<tr data-n="${p.name.replace(/"/g,"&quot;")}" class="${gone.has(p.name)?"gone":""}">` + cols.map(c => {
+    const v = c.html ? c.html(p) : c.f(p);
+    const bg = c.z ? ` style="background:${heat(p.cats[c.c])}"` : "";
+    return `<td class="${c.cls||""} ${c.z?"z":""} ${c.cl?c.cl(p):""} ${["adp","value","vrank","gap"].includes(c.k)?"num":""}"${bg}>${v}</td>`;
+  }).join("") + "</tr>").join("");
+}
+$("#t").addEventListener("click", e => {
+  const th = e.target.closest("th");
+  if (th) { const k = th.dataset.k; if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = ["vrank","adp","name","gp"].includes(k) ? 1 : -1; } return render(); }
+  const tr = e.target.closest("tbody tr"); if (!tr) return;
+  const n = tr.dataset.n; gone.has(n) ? gone.delete(n) : gone.add(n); store.set("gone", [...gone]); render();
+});
+["#q","#pos","#hide"].forEach(s => $(s).addEventListener("input", render));
+$("#avpick").addEventListener("change", () => { store.set("avpick", +$("#avpick").value); render(); });
+$("#reset").addEventListener("click", () => { gone.clear(); store.set("gone", []); render(); });
+render();
+</script>

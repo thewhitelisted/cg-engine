@@ -1,0 +1,49 @@
+name: Publish league odds
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"      # every 30 minutes (GitHub may start scheduled runs a few minutes late)
+  workflow_dispatch: {}
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: America/New_York       # game days are Eastern dates
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the page repo
+        uses: actions/checkout@v4
+        with:
+          repository: thewhitelisted/cg-531d2447
+          token: ${{ secrets.PAGES_TOKEN }}
+          path: page
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: ESPN login and publish config
+        env:
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          ESPN_SWID: ${{ secrets.ESPN_SWID }}
+        run: |
+          python - <<'PY'
+          import json, os
+          json.dump({"espn_s2": os.environ["ESPN_S2"], "SWID": os.environ["ESPN_SWID"]}, open("data/espn_auth.json", "w"))
+          json.dump({"repo_dir": "page"}, open("data/publish.json", "w"))
+          PY
+          git -C page config user.name "cg-engine"
+          git -C page config user.email "cg-engine@users.noreply.github.com"
+
+      - name: Refresh odds and publish
+        run: python publish_league.py

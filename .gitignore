@@ -1,0 +1,7 @@
+data/espn_auth.json
+data/publish.json
+data/*.log
+data/*.out
+data/weekly/
+__pycache__/
+page/
