@@ -36,9 +36,11 @@ def game_window(now):
 def earlier_run_active():
     """True if an older run of this workflow is still in progress (needs GITHUB_TOKEN with actions: read)."""
     token, repo, me = (os.environ.get(k) for k in ("GITHUB_TOKEN", "GITHUB_REPOSITORY", "GITHUB_RUN_ID"))
-    if not (token and repo and me):
+    ref = os.environ.get("GITHUB_WORKFLOW_REF", "")              # owner/repo/.github/workflows/<file>@refs/heads/main
+    wf = ref.split("@")[0].rsplit("/", 1)[-1]
+    if not (token and repo and me and wf):
         return False
-    req = urllib.request.Request(f"https://api.github.com/repos/{repo}/actions/workflows/publish.yml/runs?status=in_progress",
+    req = urllib.request.Request(f"https://api.github.com/repos/{repo}/actions/workflows/{wf}/runs?status=in_progress",
                                  headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
