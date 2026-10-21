@@ -2,7 +2,9 @@ name: Publish league odds
 
 on:
   schedule:
-    - cron: "3,18,33,48 * * * *"   # kick-offs only: a run in a game window stays up and publishes every 10 min (loop.py)
+    # Cron is UTC and can't follow daylight saving, so each line covers both EDT (UTC-4) and EST (UTC-5).
+    - cron: "3,18 13,14 * * *"            # 9 AM ET morning refresh (gate.py skips the 10 AM ones)
+    - cron: "3,18,33,48 15-23,0-6 * * *"  # 11 AM-2:48 AM ET: a run in a game window stays up and publishes every 10 min (loop.py)
   workflow_dispatch: {}
 
 permissions:
