@@ -151,6 +151,7 @@ def top_performers(lv, g, start, end, n=6):
 def build(lv, history=None):
     """Page data; `history` ({period: {matchup: odds at the first update}}) is updated in place."""
     names = {t["id"]: t["name"] for t in lv.lg["teams"]}
+    abbr = {t["id"]: t.get("abbrev") or "".join(w[0] for w in t["name"].split()[:3]).upper() for t in lv.lg["teams"]}
     start, end = LV.period_dates(lv.season, lv.period)
     sch = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
     in_period = sch[(sch.date >= start) & (sch.date <= end)].date
@@ -162,6 +163,7 @@ def build(lv, history=None):
     for m in lv.live["matchups"]:
         pc, pw, _, _ = lv.matchup(m["home"], m["away"])
         games.append({"key": f"{m['home']}-{m['away']}", "home": names[m["home"]], "away": names[m["away"]],
+                      "home_abbr": abbr[m["home"]], "away_abbr": abbr[m["away"]],
                       "p_home": float(pw), "score": list(compare(m["home_tot"], m["away_tot"])),
                       "lean": [(c, float(p)) for c, p in zip(CATS, pc)],
                       "totals": [[c, fmt(m["home_tot"], c), fmt(m["away_tot"], c)] for c in CATS],
@@ -220,10 +222,18 @@ h1 { font-size: 26px; margin: 0; letter-spacing: -.01em; }
 h2 { font-size: 18px; margin: 18px 0 0; }
 .sub { color: var(--muted); font-size: 13.5px; margin: 2px 0 6px; }
 .card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
-.row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.matchup { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.side { display: grid; gap: 3px; min-width: 0; }
+.side.r { text-align: right; }
+.meta { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.caption { color: var(--muted); font-size: 12px; text-align: center; margin-top: -4px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.da { background: var(--a); } .db { background: var(--b); }
+table.cats td:first-child { font-weight: 600; }
+table.cats th:not(:first-child), table.cats td:not(:first-child) { min-width: 44px; }
 .team { font-weight: 600; overflow-wrap: anywhere; }
 .r { text-align: right; }
-.pct { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.pct { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.05; }
 .mid { color: var(--muted); font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--mid); }
 .bar i:first-child { background: var(--a); } .bar i:last-child { background: var(--b); }
@@ -263,18 +273,24 @@ def card(gm):
     ph = gm["p_home"]
     w, l, t = gm["score"]
     (hp, hl), (ap, al) = gm["games"]
+    ha, aa = e(gm.get("home_abbr") or gm["home"][:3].upper()), e(gm.get("away_abbr") or gm["away"][:3].upper())
     head = "".join(f"<th>{c}</th>" for c in CATS)
-    rh = "".join(f'<td class="{"lead" if s == 1 else ""}">{h}</td>' for (c, h, a), s in zip(gm["totals"], gm["lead"]))
-    ra = "".join(f'<td class="{"lead" if s == -1 else ""}">{a}</td>' for (c, h, a), s in zip(gm["totals"], gm["lead"]))
-    return (f'<div class="card"><div class="row"><div class="team ha">{e(gm["home"])}</div>'
-            f'<div class="mid">{w}–{l}–{t} now</div><div class="team hb r">{e(gm["away"])}</div></div>'
-            f'<div class="row"><div class="pct ha">{ph:.0%}</div><div class="mid">win chance</div>'
-            f'<div class="pct hb r">{1 - ph:.0%}</div></div>'
+    rh = "".join(f'<td class="{"lead ha" if s == 1 else ""}">{h}</td>' for (c, h, a), s in zip(gm["totals"], gm["lead"]))
+    ra = "".join(f'<td class="{"lead hb" if s == -1 else ""}">{a}</td>' for (c, h, a), s in zip(gm["totals"], gm["lead"]))
+    tied = f" · {t} tied" if t else ""
+    return (f'<div class="card">'
+            f'<div class="matchup">'
+            f'<div class="side"><div class="team ha">{e(gm["home"])}</div><div class="pct ha">{ph:.0%}</div>'
+            f'<div class="meta">leads {w} of 9 · {hp} played, {hl} left</div></div>'
+            f'<div class="side r"><div class="team hb">{e(gm["away"])}</div><div class="pct hb">{1 - ph:.0%}</div>'
+            f'<div class="meta">leads {l} of 9 · {ap} played, {al} left</div></div>'
+            f'</div>'
             f'<div class="bar" aria-hidden="true"><i style="width:{100 * ph:.1f}%"></i><i style="width:{100 * (1 - ph):.1f}%"></i></div>'
-            f'<div class="scroll"><table><tr><th></th>{head}</tr>'
-            f'<tr><td class="ha">{e(gm["home"][:16])}</td>{rh}</tr><tr><td class="hb">{e(gm["away"][:16])}</td>{ra}</tr></table></div>'
-            f'<div class="row"><div class="mid" style="text-align:left">games {hp} played · {hl} left</div><div></div>'
-            f'<div class="mid r">games {ap} played · {al} left</div></div></div>')
+            f'<div class="caption">chance to win the week{tied}</div>'
+            f'<div class="scroll"><table class="cats"><tr><th></th>{head}</tr>'
+            f'<tr><td><span class="dot da"></span>{ha}</td>{rh}</tr>'
+            f'<tr><td><span class="dot db"></span>{aa}</td>{ra}</tr></table></div>'
+            f'</div>')
 
 
 def render(data):

@@ -57,6 +57,7 @@ def normalize(j):
                             if k in POS and v >= 0},
         "order": j["settings"]["draftSettings"]["pickOrder"],
         "teams": [{"id": t["id"], "name": t.get("name") or f"{t.get('location', '')} {t.get('nickname', '')}".strip(),
+                   "abbrev": t.get("abbrev"),
                    "record": side({"cumulativeScore": (t.get("record") or {}).get("overall") or {}}),
                    "waiver_rank": t.get("waiverRank"),
                    "roster": [[e["playerId"], e["playerPoolEntry"]["player"]["fullName"], e["lineupSlotId"],
