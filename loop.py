@@ -5,6 +5,7 @@ publishes on its own clock until the window closes or MAX_RUN is reached. GitHub
 limit, if games are still on, it starts a fresh run of this workflow itself (workflow_dispatch, handoff=true)
 instead of waiting for the unreliable schedule. Outside a game window (morning refresh, manual runs) it
 publishes once.
+After each publish it commits data/status_log.csv (ESPN injury-status changes) back to this repo if it grew.
 Exits 1 if every publish failed, so a broken login shows up as a failed run.
 """
 import json
@@ -38,6 +39,21 @@ def hand_off():
         print(f"handoff failed ({type(e).__name__}: {e}); the schedule will have to pick it up")
 
 
+def save_status_log():
+    """Commit and push data/status_log.csv if publish_league.py appended to it (or an earlier push failed)."""
+    path = "data/status_log.csv"
+    git = ["git", "-c", "user.name=cg-engine", "-c", "user.email=cg-engine@users.noreply.github.com"]
+    if subprocess.run(["git", "status", "--porcelain", "--", path], capture_output=True, text=True).stdout.strip():
+        subprocess.run(git + ["add", path])
+        subprocess.run(git + ["commit", "-q", "-m", "Status log"])
+    ahead = subprocess.run(["git", "rev-list", "--count", "@{u}..HEAD"], capture_output=True, text=True).stdout.strip()
+    if ahead in ("", "0"):
+        return
+    subprocess.run(git + ["pull", "-q", "--rebase", "--autostash"])
+    if subprocess.run(["git", "push", "-q"]).returncode != 0:
+        print("status log push failed; retrying after the next publish")
+
+
 def main():
     start = datetime.now(gate.ET)
     ok = fails = 0
@@ -47,6 +63,7 @@ def main():
             ok += 1
         else:
             fails += 1
+        save_status_log()
         live, why = gate.game_window(datetime.now(gate.ET))
         nxt = t0 + INTERVAL
         if not live or nxt + INTERVAL - start > MAX_RUN:

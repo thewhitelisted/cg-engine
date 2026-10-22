@@ -16,6 +16,7 @@ import league_page as LP
 import live as LV
 import live_server as S
 import model as M
+import status_log
 import sync
 
 LOG = M.DATA / "publish.log"
@@ -37,6 +38,12 @@ def main():
     repo = cfg["repo_dir"]
     lg = sync.normalize(S.espn(["mTeam", "mRoster", "mMatchupScore", "mScoreboard", "mSettings", "mStatus"]))
     (M.DATA / "league_2027.json").write_text(json.dumps(lg))
+    statuses = dict(I.all_statuses())                   # whole player pool, plus rostered players outside it
+    if statuses:
+        statuses.update({e[0]: e[3] for t in lg["teams"] for e in t["roster"]})
+    n = status_log.record(statuses)
+    if n:
+        log(f"status log: {n} change{'s' if n != 1 else ''}")
     live, _, _ = S.live_from(S.espn(["mMatchupScore", "mScoreboard", "mStatus"]))
     (M.DATA / "live.json").write_text(json.dumps(live))
     try:
