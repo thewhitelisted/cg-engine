@@ -51,6 +51,8 @@ def earlier_run_active():
 
 
 def decide(now):
+    if os.environ.get("HANDOFF") == "true":                       # the previous loop is finishing and handed over
+        return True, "handoff from the previous run"
     if earlier_run_active():
         return False, "an earlier run is still publishing"
     if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
