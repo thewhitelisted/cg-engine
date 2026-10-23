@@ -60,7 +60,8 @@ def load(season, n_match, seed):
     weeks = [w for w in np.unique(week) if (week == w).sum() == 7]
     gm = sched.sum(1) / len(np.unique(week)) * share
     return dict(mu=mu, var=M.per_game_var(mu), X=X, played=played, sched=sched, share=share, E=E, val=val,
-                week=week, weeks=weeks, gm=gm, n=len(ids), n_match=n_match, seed=seed)
+                week=week, weeks=weeks, gm=gm, n=len(ids), n_match=n_match, seed=seed,
+                ids=ids, tm=np.array([t for _, t, _ in pool]), day0=day0)
 
 
 def starters(d, players):

@@ -5,8 +5,10 @@
 
 Final weekly total = known so far (ESPN live, starters only) + the rest of the week: each remaining scheduled
 game is played with probability a (games-played share x injury return path) at the player's blended per-game
-rates. Model L3 (DECISIONS.md): near-term availability, daily 10-starter cap, kappa_c 1.044 on categories and
-over-dispersion psi 0.35 on categories won (fit 2024-25; validated on 2025-26 and 2023-24).
+rates. Model L4 (DECISIONS.md C1-C3) = L3 (near-term availability, daily 10-starter cap, over-dispersion psi on
+categories won) plus game context: each game's expectation is scaled by the opponent's allowed factor (C1, from
+this season's box scores, shrunk by games played) and by the minutes of teammates on a 2+ game absence (C3).
+kappa_c 1.041, psi 0.350 (fit 2024-25; validated on 2025-26 and 2023-24). MODEL = "L3" restores the previous engine.
 Remaining games: scheduled games after today, plus today's games that have no box score yet. Run after a
 night's games finish: an in-progress game is counted both in the live totals and as remaining.
 """
@@ -22,8 +24,13 @@ import model as M
 from draft import LIVE_CONFIG
 
 KAPPA_LIVE = 1.087                 # L1b (fallback)
-MODEL = "L3"                       # DECISIONS.md L3: near-term availability + daily lineup cap + separate
-KAPPA_C, PSI, RHO = 1.044, 0.350, 0.361   # category calibration (kappa_c) and category dependence (psi); fit 2024-25
+MODEL = "L4"                       # DECISIONS.md C1-C3: L3 + opponent factor (C1) + teammate absences (C3)
+RHO = 0.361                        # near-term availability (L2b), fit 2024-25
+KAPPA_C, PSI = (1.041, 0.350) if MODEL == "L4" else (1.044, 0.350)   # category calibration, category dependence
+OPP_K = {"pts": 40, "reb": 40, "ast": 20, "stl": 20, "blk": 40, "tpm": 40, "tov": 20, "fga": 40, "fta": 40, "fgx": 40}
+ABS_BETA = {"pts": 0.082, "reb": 0.044, "ast": 0.075, "stl": 0.025, "blk": -0.067, "tpm": 0.035, "tov": 0.050,
+            "fga": 0.066, "fta": 0.084}      # per 240 absent teammate minutes
+CTX_STATS = ["pts", "reb", "ast", "stl", "blk", "tpm", "tov", "fga", "fta"]
 MC_CAP = 200
 MY_TEAM = 13
 LIVE_FILE = M.DATA / "live.json"
@@ -83,7 +90,7 @@ def final_dist(season, roster, known, n_rem, a):
 
 def win_week(pc):
     """P(win at least 5 of 9). L3: over-dispersed normal on categories won; L1b: independent Poisson-binomial."""
-    if MODEL != "L3":
+    if MODEL not in ("L3", "L4"):
         return float(M.Evaluator.matchup_win(pc))
     from scipy.stats import norm
     mu, var = pc.sum(), (pc * (1 - pc)).sum() * (1 + PSI)
@@ -126,9 +133,38 @@ def near_term_p(share, m, j, rho, S):
     return np.where(m == 0, healthy, back * pi)
 
 
+def opponent_factor(actual, expected, games):
+    """C1: (multiplicative factors [stat], per-attempt fgx shift) for one opponent from its allowed totals so far."""
+    f = np.ones(len(M.STATK))
+    for s in CTX_STATS:
+        w = games / (games + OPP_K[s]) if games > 0 else 0.0
+        e = expected[M.SK[s]]
+        f[M.SK[s]] = 1 + w * (actual[M.SK[s]] / e - 1) if e > 0 else 1.0
+    w = games / (games + OPP_K["fgx"]) if games > 0 else 0.0
+    shift = w * (actual[M.SK["fgx"]] - expected[M.SK["fgx"]]) / max(actual[M.SK["fga"]], 1e-9)
+    return f, shift
+
+
+def apply_context(mu, var, f, shift, x):
+    """Per-game lines mu, var [n, stat] adjusted for the opponent (f [n, stat], shift [n]) and absent teammates'
+    minutes x [n] (/ 240). With f = 1, shift = 0, x = 0 they come back unchanged."""
+    base = mu.copy()
+    m, v = mu * f, var * f
+    m[:, M.SK["fgx"]] = base[:, M.SK["fgx"]] * f[:, M.SK["fga"]] + m[:, M.SK["fga"]] * shift
+    m[:, M.SK["ftx"]] = base[:, M.SK["ftx"]] * f[:, M.SK["fta"]]
+    pre = m.copy()
+    for s in CTX_STATS:
+        up = 1 + ABS_BETA[s] * x
+        m[:, M.SK[s]] *= up
+        v[:, M.SK[s]] *= up
+    m[:, M.SK["fgx"]] = pre[:, M.SK["fgx"]] * (1 + ABS_BETA["fga"] * x)
+    m[:, M.SK["ftx"]] = pre[:, M.SK["ftx"]] * (1 + ABS_BETA["fta"] * x)
+    return m, v
+
+
 def cat_probs(mA, vA, mB, vB):
     prev = M.MATCHUP_SD_KAPPA
-    M.set_kappa(KAPPA_C if MODEL == "L3" else KAPPA_LIVE)
+    M.set_kappa(KAPPA_C if MODEL in ("L3", "L4") else KAPPA_LIVE)
     try:
         return M.Evaluator.cat_probs(mA, vA, mB, vB)
     finally:
@@ -158,7 +194,7 @@ class Live:
         self.n_tmr = remaining_games(self.season, self.g, self.period, from_tomorrow=True)
         self.slot = {t: s for s, t in enumerate(self.B["tids"])}
         self.today_frac = today_frac
-        if MODEL in ("L2", "L3"):
+        if MODEL in ("L2", "L3", "L4"):
             self._l2_setup()
 
     def update(self, live, today_frac=None):
@@ -166,7 +202,7 @@ class Live:
         self.live = live
         self.n_rem = remaining_games(self.season, self.g, self.period, today_frac=today_frac)
         self.today_frac = today_frac
-        if MODEL in ("L2", "L3"):
+        if MODEL in ("L2", "L3", "L4"):
             self._l2_setup()
 
     # ---------------- L2: near-term availability + daily lineup cap
@@ -180,7 +216,41 @@ class Live:
         self.val, _ = M.static_value(df)
         self.m_now = np.asarray(self.B["info"]["m"])
         self.share = df["avail"].to_numpy()
-        self._cache = {}
+        self._cache, self._daily = {}, {}
+        if MODEL == "L4":
+            self._context_setup()
+
+    def _context_setup(self):
+        """C1 opponent factors from this season's box scores before today; C3 absent-teammate minutes by NBA team."""
+        df, g = self.season.df, self.g
+        today = pd.Timestamp(date.today())
+        sch = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
+        pair = sch.merge(sch, on="game_id", suffixes=("", "_o"))
+        pair = pair[pair.pro_team_id != pair.pro_team_id_o]
+        opp_sp = {(int(t), int(sp)): int(o) for t, sp, o in pair[["pro_team_id", "scoring_period", "pro_team_id_o"]].values}
+        self.opp_day = {(int(t), d): int(o) for t, d, o in pair[["pro_team_id", "date", "pro_team_id_o"]].values}
+        games = sch[sch.date < today].groupby("pro_team_id").size()
+        idx = {int(i): k for k, i in enumerate(df["id"])}
+        team = df["pro_team_id"].to_numpy()
+        X = df[M.STATK].to_numpy(float)
+        act, exp = {}, {}
+        for r in g.itertuples(index=False) if len(g) else ():
+            k = idx.get(int(r.id))
+            o = None if k is None else opp_sp.get((int(team[k]), int(r.scoring_period)))
+            if o is None:
+                continue
+            row = known_totals({s: getattr(r, s) for s in ("fga", "fta", "tpm", "reb", "ast", "stl", "blk", "tov", "pts",
+                                                           "fgm", "ftm")})
+            act[o], exp[o] = act.get(o, 0) + row, exp.get(o, 0) + X[k]
+        self.opp_fac = {o: opponent_factor(act[o], exp[o], float(games.get(o, 0))) for o in act}
+        absent = np.asarray(self.B["info"]["absent"])
+        mins = g.groupby("id")["min"].mean() if len(g) else pd.Series(dtype=float)
+        x = {}
+        for k in np.where(absent)[0]:              # A1 absent, has played this season, projected >= 10 minutes
+            pid = int(df["id"].iloc[k])
+            if pid in mins.index and df["espn_min"].iloc[k] >= 10:
+                x[int(team[k])] = x.get(int(team[k]), 0.0) + mins[pid] / 240
+        self.abs_x = np.array([x.get(int(t), 0.0) for t in team])
 
     def expected_starts(self, roster, late=()):
         """Per player: expected counted games (starts) left this week, and their Bernoulli variance."""
@@ -190,6 +260,7 @@ class Live:
         if key in self._cache:
             return self._cache[key]
         E, V = np.zeros(len(self.season.df)), np.zeros(len(self.season.df))
+        daily = []
         j = np.zeros(len(r), int)
         rng = np.random.default_rng(11)
         for k, (d, w) in enumerate(self.days):
@@ -216,20 +287,21 @@ class Live:
                 es /= MC_CAP
             E[r[on]] += es * wr[on]
             V[r[on]] += es * (1 - es) * wr[on] ** 2
-        self._cache[key] = (E, V)
+            daily.append((d, r[on], es * wr[on], es * (1 - es) * wr[on] ** 2))
+        self._cache[key], self._daily[key] = (E, V), daily
         return E, V
 
     def games_left(self, tid, rosters=None):
         rost = self.B["rost"] if rosters is None else rosters
         r = [p for p in rost[self.slot[tid]] if p >= 0]
-        if MODEL in ("L2", "L3"):
+        if MODEL in ("L2", "L3", "L4"):
             return float(self.expected_starts(rost[self.slot[tid]])[0][r].sum())
         return float((self.n_rem * self.a)[r].sum())
 
     def matchup(self, home, away, rosters=None):
         m = next(x for x in self.live["matchups"] if x["home"] == home and x["away"] == away)
         rost = self.B["rost"] if rosters is None else rosters
-        if MODEL in ("L2", "L3"):
+        if MODEL in ("L2", "L3", "L4"):
             late = getattr(self, "late", ())
             mA, vA = self._final_l2(rost[self.slot[home]], known_totals(m["home_tot"]), late)
             mB, vB = self._final_l2(rost[self.slot[away]], known_totals(m["away_tot"]), late)
@@ -240,11 +312,32 @@ class Live:
         return pc, win_week(pc), (mA, mB), m
 
     def _final_l2(self, roster, known, late=()):
+        if MODEL == "L4":
+            return self._final_l4(roster, known, late)
         r = [p for p in roster if p >= 0]
         E, V = self.expected_starts(roster, late)
         mu = self.season.df[M.STATK].to_numpy(float)[r]
         m = known + (E[r][:, None] * mu).sum(0)
         v = (E[r][:, None] * M.per_game_var(mu) + V[r][:, None] * mu ** 2).sum(0)
+        return m, np.maximum(v, 1e-9)
+
+    def _final_l4(self, roster, known, late=()):
+        """L3's expected starts, day by day, with each game's line adjusted for its opponent and absent teammates."""
+        r = np.array([p for p in roster if p >= 0])
+        self.expected_starts(roster, late)
+        X = self.season.df[M.STATK].to_numpy(float)
+        team = self.season.df["pro_team_id"].to_numpy()
+        m, v = known.copy(), np.zeros(len(M.STATK))
+        for d, pl, e, ve in self._daily[(tuple(r), tuple(late))]:
+            mu = X[pl]
+            f, shift = np.ones_like(mu), np.zeros(len(pl))
+            for i, p in enumerate(pl):
+                o = self.opp_day.get((int(team[p]), d))
+                if o in self.opp_fac:
+                    f[i], shift[i] = self.opp_fac[o]
+            mu, var = apply_context(mu, M.per_game_var(mu), f, shift, self.abs_x[pl])
+            m += (e[:, None] * mu).sum(0)
+            v += (e[:, None] * var + ve[:, None] * mu ** 2).sum(0)
         return m, np.maximum(v, 1e-9)
 
     def week0_pc(self, pairs0, rosters=None):
