@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>The Cool Guys · How the odds work</title>
+<style>
+:root { --bg: #f6f6f2; --card: #fcfcfb; --ink: #15171a; --ink2: #4d5056; --muted: #84878c; --rule: #e1e0d9;
+  --a: #2a78d6; --good: #2e7a57; --bad: #b2402e; --mid: #ece9e2; color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0f1011; --card: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7;
+  --muted: #8e8d87; --rule: #2c2c2a; --a: #5b9ce8; --good: #63c497; --bad: #e8796a; --mid: #2c2c2a; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 28px 16px 64px; display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); }
+h1 { font-size: 28px; line-height: 1.15; margin: 0; letter-spacing: -.01em; }
+h2 { font-size: 20px; margin: 22px 0 0; }
+h3 { font-size: 16px; margin: 0; }
+p { margin: 0; }
+.lead { color: var(--ink2); font-size: 17px; }
+.sub { color: var(--muted); font-size: 13.5px; }
+a { color: var(--a); }
+.card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 18px; display: grid; gap: 8px; min-width: 0; }
+ol, ul { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+.item { display: grid; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.item:last-child { border-bottom: 0; padding-bottom: 0; }
+.item:first-child { padding-top: 0; }
+.what { color: var(--ink2); }
+.result { font-size: 14.5px; font-variant-numeric: tabular-nums; }
+.tag { display: inline-block; font-size: 12px; font-weight: 600; letter-spacing: .03em; padding: 1px 8px; border-radius: 999px;
+  margin-right: 6px; vertical-align: 1px; white-space: nowrap; }
+.kept { color: var(--good); border: 1px solid var(--good); }
+.new { color: var(--a); border: 1px solid var(--a); }
+.no { color: var(--bad); border: 1px solid var(--bad); }
+.same { color: var(--muted); border: 1px solid var(--rule); }
+.group { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-top: 6px; }
+dl { margin: 0; display: grid; gap: 10px; }
+dt { font-weight: 600; }
+dd { margin: 0; color: var(--ink2); }
+.back { font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <p class="back"><a href="./">← Back to the league page</a></p>
+    <h1>How the odds work, and what we've tested</h1>
+    <p class="sub">Last updated Oct 23, 2026</p>
+  </div>
+  <p class="lead">Every chance on the league page comes from a model: a fixed set of rules that turns player stats and the NBA
+  schedule into chances. This page lists every change that has been tried, whether it made the predictions more accurate,
+  and what gets tested next.</p>
+
+  <h2>How a change gets in</h2>
+  <div class="card">
+    <ol>
+      <li><b>The test is written down first.</b> Before any results exist, we write what will be measured and what counts as a
+      pass. The results can't change the rules after the fact.</li>
+      <li><b>It's built using one past season</b> (usually 2024-25).</li>
+      <li><b>It's tested on other past seasons it never saw</b> (usually 2025-26 and 2023-24). Those seasons are replayed day by
+      day, and the chances the model gave are compared with what actually happened.</li>
+      <li><b>It's kept only if it's more accurate on every test season,</b> not better on one and worse on another. A failed
+      test is final: the same idea isn't re-run until it passes.</li>
+    </ol>
+  </div>
+
+  <h2>How "more accurate" is measured</h2>
+  <div class="card">
+    <dl>
+      <div><dt>Prediction error</dt>
+        <dd>For each matchup, take the gap between the chance the model gave and what happened (a win counts as 100%, a loss as
+        0%), square it so big misses count more, and average over every matchup. Smaller is better. Saying 80% for a team that
+        wins gives a small error; saying 80% for a team that loses gives a big one.</dd></div>
+      <div><dt>Calibration</dt>
+        <dd>When the model says 70%, that team should win about 70% of the time. Predictions are grouped into ranges (0–10%,
+        10–20%, and so on), and in every range the predicted chance has to be within 4 percentage points of how often it
+        really happened.</dd></div>
+      <div><dt>Test season</dt>
+        <dd>A past season that wasn't used to build or tune the change. A model can look great on the data it was built from,
+        so only results on test seasons count.</dd></div>
+      <div><dt>ADP (average draft position)</dt>
+        <dd>Where a player typically gets picked across fantasy drafts. It reflects what thousands of drafters know, including
+        injuries and role changes that stat projections can miss.</dd></div>
+    </dl>
+  </div>
+
+  <h2>What's in the model now</h2>
+  <div class="card">
+    <div class="group">Player projections (built before the season)</div>
+    <div class="item"><h3><span class="tag kept">Kept</span>Draft-market information</h3>
+      <p class="what">Projections are adjusted toward each player's ADP, so the model doesn't ignore what drafters collectively know.</p>
+      <p class="result">Player value predictions: error 25% smaller on a test season (7.02 → 5.29).</p></div>
+    <div class="item"><h3><span class="tag kept">Kept</span>Market adjustment only for players people actually draft</h3>
+      <p class="what">Players with no real ADP keep their plain projection.</p>
+      <p class="result">Error 4% smaller across three seasons (6.99 → 6.68).</p></div>
+    <div class="item"><h3><span class="tag kept">Kept</span>Deciding how much to trust the market</h3>
+      <p class="what">Some seasons the draft market is right more often than the projections, some seasons less. The model learns
+      how much weight to give each and allows for that to vary. Three versions were kept, each beating the one before.</p>
+      <p class="result">Projection error 7% smaller across three seasons (1.564 → 1.457).</p></div>
+    <div class="item"><h3><span class="tag kept">Kept</span>Less overconfident weekly odds</h3>
+      <p class="what">The first version was too sure of itself. Spreading the odds out by 18% made them match reality better.</p>
+      <p class="result">Prediction error 0.2106 → 0.2095 on a test season. Teams given 75–90% now win about as often as predicted.</p></div>
+    <div class="item"><h3><span class="tag kept">Kept</span>Valuing outcomes by the real prizes</h3>
+      <p class="what">Results are weighed by the actual payouts ($150 / $90 / $60), not just by the chance of winning the title.</p>
+      <p class="result">Same draft decisions, scored on what actually pays.</p></div>
+
+    <div class="group">During the season</div>
+    <div class="item"><h3><span class="tag kept">Kept</span>Mixing in this season's stats</h3>
+      <p class="what">Each player's expected stats blend their preseason projection with what they've actually done. Real games count
+      for more as the season goes on: for points, real stats get half the weight after about 10 games.</p>
+      <p class="result">Rest-of-season points predictions: error 37% smaller than projections alone.</p></div>
+    <div class="item"><h3><span class="tag kept">Kept</span>Who actually plays</h3>
+      <p class="what">Tracks how often each player really plays. For a player who's out, it uses how long absences actually lasted
+      in 3,329 real cases to estimate when they'll be back. Injured-reserve players return to their team when healthy.</p>
+      <p class="result">Predictions of games played for injured players: error cut in half (0.148 → 0.074).</p></div>
+
+    <div class="group">This week's odds</div>
+    <div class="item"><h3><span class="tag kept">Kept</span>Daily lineup limit and short-term availability</h3>
+      <p class="what">Only 10 players can start each day, so on busy nights some games go unused. A player who played last game is
+      very likely to play the next one; a player who has missed several is less likely.</p>
+      <p class="result">Part of the version below.</p></div>
+    <div class="item"><h3><span class="tag kept">Kept</span>Categories that move together</h3>
+      <p class="what">A big week usually shows up in several categories at once (points, threes and assists together). The model
+      accounts for this when it turns nine category chances into one matchup chance.</p>
+      <p class="result">With the item above: matchup prediction error about 5% smaller on both test seasons (0.130 → 0.123).</p></div>
+    <div class="item"><h3><span class="tag new">New, Oct 23</span>Opponent and pace</h3>
+      <p class="what">Each game is adjusted for the team being played, based on what that team has given up this season. Early on it
+      barely counts; it gets more weight as each team plays more games (half weight after 20 to 40 games, depending on the stat).</p>
+      <p class="result">Together with the next item: prediction error 0.2–0.4% smaller on both test seasons.</p></div>
+    <div class="item"><h3><span class="tag new">New, Oct 23</span>Teammates out</h3>
+      <p class="what">When a teammate who has been playing misses 2 or more games in a row, the players still on the floor get a bit
+      more of the stats. For example, with a 30-minute player out, a teammate's expected points go up about 1%.</p>
+      <p class="result">Included in the result above.</p></div>
+  </div>
+
+  <h2>Tried and not kept</h2>
+  <div class="card">
+    <div class="item"><h3><span class="tag no">Rejected</span>Drafting only to maximise title chance</h3>
+      <p class="result">Did worse on real past seasons.</p></div>
+    <div class="item"><h3><span class="tag no">Rejected</span>Wider ranges for surprise seasons</h3>
+      <p class="result">Made typical ranges less accurate while barely helping the extreme ones.</p></div>
+    <div class="item"><h3><span class="tag no">Rejected</span>Correcting games-played projections</h3>
+      <p class="result">Over-corrected; overall accuracy got worse.</p></div>
+    <div class="item"><h3><span class="tag no">Rejected</span>Recalculating the market weight separately each season</h3>
+      <p class="result">Less accurate overall than one weight from all seasons.</p></div>
+    <div class="item"><h3><span class="tag no">Rejected</span>An outside projection system (DARKO) as extra input</h3>
+      <p class="result">More accurate for single stats, but less accurate for overall player value in 2 of 3 seasons. It gets
+      re-tested on this season at the end of the year.</p></div>
+    <div class="item"><h3><span class="tag no">Rejected</span>Separating ESPN's points-league ranking from its category ranking</h3>
+      <p class="result">Looked better at first, then failed when tested forward in time (using only earlier seasons to predict later ones).</p></div>
+    <div class="item"><h3><span class="tag no">Rejected</span>Re-fitting how much each past season and player age matter</h3>
+      <p class="result">No accuracy gain over the simple standard weights.</p></div>
+    <div class="item"><h3><span class="tag no">Rejected</span>Players in the same game, and league-wide good or bad nights</h3>
+      <p class="result">When two players face each other, their stats move together slightly, but it made zero measurable difference
+      to matchup predictions.</p></div>
+    <div class="item"><h3><span class="tag no">Rejected</span>Earlier versions of the weekly odds (three attempts)</h3>
+      <p class="result">Either too cautious in the 10–30% range or built with a design error. Replaced by the version kept above.</p></div>
+    <div class="item"><h3><span class="tag no">Not built</span>Learning other managers' draft habits</h3>
+      <p class="result">Changed title chances by less than half a percentage point.</p></div>
+    <div class="item"><h3><span class="tag no">Not built</span>Simulating every day of the season</h3>
+      <p class="result">The weekly model already matches real weeks, and the 10-starter limit only costs 0.36% of games.</p></div>
+  </div>
+
+  <h2>Checked, no change needed</h2>
+  <div class="card">
+    <div class="item"><h3><span class="tag same">Confirmed</span>The model's built-in assumptions</h3>
+      <p class="result">How fast injured players' games get replaced, how quickly real stats take over, how often teammates miss
+      games together, and games per week were all measured from real data. Every measured value was close enough to what the
+      model already used that no decision would change.</p></div>
+    <div class="item"><h3><span class="tag same">Confirmed</span>Teammates taking each other's stats</h3>
+      <p class="result">Once you account for who played, teammates' stats don't rise and fall together. Only their games played
+      do (teammates share a schedule), and the model already includes that.</p></div>
+  </div>
+
+  <h2>Coming next</h2>
+  <div class="card">
+    <ol>
+      <li><b>Day-to-day injury tags.</b> Right now a "day-to-day" tag doesn't change anything. Every player's ESPN status has been
+      recorded since Oct 22; the test runs in mid-November, once there are about 300 games by day-to-day players to learn from.</li>
+      <li><b>Early-season expectations.</b> In the first week, players across the league came in about 15% below expectations,
+      mostly from playing fewer minutes. The plan is to check past seasons to see whether this happens every year, and if so,
+      let real stats take over sooner.</li>
+      <li><b>Opponents in future weeks, including the playoffs.</b> The new opponent adjustment only affects this week. Carrying
+      it into the rest of the season, especially the March playoff weeks, needs its own test.</li>
+      <li><b>Back-to-backs.</b> Stars often sit the second night of back-to-back games. The model currently treats every game the same.</li>
+      <li><b>Real lineups.</b> The model assumes every manager starts their best players. Using the lineups managers actually
+      set would make live odds sharper.</li>
+      <li><b>End of the season.</b> Every weekly prediction from this season gets scored against what happened, and the outside
+      projection system gets its re-test.</li>
+    </ol>
+  </div>
+
+  <h2>Known limitation</h2>
+  <div class="card">
+    <p>The model's "95% ranges" for player stats contain the real result about 92% of the time, so surprises happen slightly
+    more often than it expects. The one fix that was tried made things worse, so it's listed here instead.</p>
+  </div>
+
+  <p class="back"><a href="./">← Back to the league page</a></p>
+</div>
+</body>
+</html>

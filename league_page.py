@@ -654,6 +654,11 @@ nav.jump a { flex: none; padding: 6px 12px; border-radius: 999px; border: 1px so
 nav.jump a:hover { border-color: var(--muted); color: var(--ink); }
 nav.jump a.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 nav.jump a:focus-visible { outline: 2px solid var(--a); outline-offset: 2px; }
+.foot { display: flex; justify-content: center; padding-top: 18px; border-top: 1px solid var(--rule); margin-top: 8px; }
+.btn { display: inline-block; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--rule); background: var(--card);
+  color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: none; }
+.btn:hover { border-color: var(--muted); }
+.btn:focus-visible { outline: 2px solid var(--a); outline-offset: 2px; }
 [id] { scroll-margin-top: 60px; }
 @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 td.rk { text-align: center; min-width: 40px; }
@@ -687,6 +692,7 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
   %(moves)s
   %(activity)s
   %(later)s
+  <footer class="foot"><a class="btn" href="insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
 </div>
 <script>
 (() => {

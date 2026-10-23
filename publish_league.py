@@ -10,6 +10,7 @@ import subprocess
 import sys
 import traceback
 from datetime import datetime
+from pathlib import Path
 
 import inseason as I
 import league_page as LP
@@ -20,6 +21,7 @@ import status_log
 import sync
 
 LOG = M.DATA / "publish.log"
+INSIGHTS = Path(__file__).parent / "web" / "insights.html"     # static explainer page, linked from the footer
 
 
 def log(msg):
@@ -67,15 +69,22 @@ def main():
         old = open(f"{repo}/.content_key").read()
     except Exception:
         old = ""
-    if key == old:
+    insights = INSIGHTS.read_text() if INSIGHTS.exists() else None
+    try:
+        old_insights = open(f"{repo}/insights.html").read()
+    except Exception:
+        old_insights = None
+    if key == old and insights == old_insights:
         log("page content unchanged; nothing to push")
         return
+    if insights is not None:
+        open(f"{repo}/insights.html", "w").write(insights)
     open(f"{repo}/index.html", "w").write(LP.render(data))
     open(f"{repo}/data.json", "w").write(json.dumps(LP.public_json(data)))
     open(f"{repo}/history.json", "w").write(json.dumps(history))
     open(f"{repo}/.content_key", "w").write(key)
     git(repo, "pull", "--rebase", "--quiet")
-    git(repo, "add", "index.html", "data.json", "history.json", ".content_key")
+    git(repo, "add", "index.html", "data.json", "history.json", ".content_key", "insights.html")
     c = git(repo, "commit", "-m", f"Update odds {data['updated']}")
     p = git(repo, "push", "--quiet")
     if p.returncode != 0:
