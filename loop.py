@@ -5,7 +5,8 @@ publishes on its own clock until the window closes or MAX_RUN is reached. GitHub
 limit, if games are still on, it starts a fresh run of this workflow itself (workflow_dispatch, handoff=true)
 instead of waiting for the unreliable schedule. Outside a game window (morning refresh, manual runs) it
 publishes once.
-After each publish it commits data/status_log.csv (ESPN injury-status changes) back to this repo if it grew.
+After each publish it commits data/status_log.csv (injury-status changes) and data/lineup_log.csv (fantasy lineup
+changes) back to this repo if they grew.
 Exits 1 if every publish failed, so a broken login shows up as a failed run.
 """
 import json
@@ -39,13 +40,17 @@ def hand_off():
         print(f"handoff failed ({type(e).__name__}: {e}); the schedule will have to pick it up")
 
 
+LOGS = ["data/status_log.csv", "data/lineup_log.csv"]
+
+
 def save_status_log():
-    """Commit and push data/status_log.csv if publish_league.py appended to it (or an earlier push failed)."""
-    path = "data/status_log.csv"
+    """Commit and push the status and lineup logs if publish_league.py appended to them (or an earlier push failed)."""
     git = ["git", "-c", "user.name=cg-engine", "-c", "user.email=cg-engine@users.noreply.github.com"]
-    if subprocess.run(["git", "status", "--porcelain", "--", path], capture_output=True, text=True).stdout.strip():
-        subprocess.run(git + ["add", path])
-        subprocess.run(git + ["commit", "-q", "-m", "Status log"])
+    changed = [p for p in LOGS
+               if subprocess.run(["git", "status", "--porcelain", "--", p], capture_output=True, text=True).stdout.strip()]
+    if changed:
+        subprocess.run(git + ["add", *changed])
+        subprocess.run(git + ["commit", "-q", "-m", "Status and lineup logs"])
     ahead = subprocess.run(["git", "rev-list", "--count", "@{u}..HEAD"], capture_output=True, text=True).stdout.strip()
     if ahead in ("", "0"):
         return

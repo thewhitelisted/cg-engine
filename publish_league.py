@@ -48,6 +48,9 @@ def main():
         log(f"status log: {n} change{'s' if n != 1 else ''}")
     live, _, _ = S.live_from(S.espn(["mMatchupScore", "mScoreboard", "mStatus"]))
     (M.DATA / "live.json").write_text(json.dumps(live))
+    n = status_log.record_lineups(lg, live["latest_scoring_period"])
+    if n:
+        log(f"lineup log: {n} change{'s' if n != 1 else ''}")
     try:
         sb = S.scoreboard(datetime.now())
         frac = {k: v[1] for k, v in sb.items()}

@@ -2,6 +2,7 @@
 
 Per-game rates are the preseason projection updated with season-to-date stats:
     rate = (K * projection + n * to_date_mean) / (K + n)      K per stat from research_inseason.py
+A traded player's games before the trade count PRE_TRADE_W (DECISIONS.md R5, validated on 2025-26 and 2023-24).
 Your roster: data/my_roster.json (list of names) if present, else your picks in data/draft_state.json.
 Opponents: the other 11 rosters recorded at the draft. Players already on a drafted roster are excluded
 from suggestions; check that a suggested player is actually a free agent in ESPN before adding.
@@ -22,6 +23,34 @@ from draft import LIVE_CONFIG
 
 M.set_kappa(LIVE_CONFIG["kappa"])
 K_GAMES = json.loads((M.DATA / "inseason_K.json").read_text())
+PRE_TRADE_W = 0.2
+
+
+def first_post_trade(days, sched):
+    """Index of a player's first game with their current NBA team (0 = never traded), from team schedules.
+    days: the player's game days in order; sched: {team: set of that team's game days}. As validated (R5): the old
+    team has the longest prefix, the new team the longest suffix, shared ambiguous days go to the old team; with
+    more than two teams, everything before the final team's run counts as pre-trade."""
+    if any(all(d in s for d in days) for s in sched.values()):
+        return 0
+    pre = {t: next((i for i, d in enumerate(days) if d not in s), len(days)) for t, s in sched.items()}
+    suf = {t: next((i for i, d in enumerate(reversed(days)) if d not in s), len(days)) for t, s in sched.items()}
+    A = max(pre, key=pre.get)
+    B = max((t for t in suf if t != A), key=suf.get)
+    if pre[A] + suf[B] >= len(days):
+        return pre[A]
+    return len(days) - max(suf.values())
+
+
+def game_weights(g, schedule):
+    """Per game-log row: PRE_TRADE_W for games before a mid-season move to a new team, else 1."""
+    sched = {t: set(x) for t, x in schedule.groupby("pro_team_id").scoring_period}
+    w = pd.Series(1.0, index=g.index)
+    for _, rows in g.sort_values("scoring_period").groupby("id"):
+        k = first_post_trade(rows.scoring_period.tolist(), sched)
+        if k:
+            w.loc[rows.index[:k]] = PRE_TRADE_W
+    return w
 
 
 def updated_rates(season, g=None):
@@ -36,7 +65,11 @@ def updated_rates(season, g=None):
     g = g[g["min"] > 0]
     if g.empty:
         return mu, np.zeros(len(df))
-    td = g.groupby("id")[["pts", "reb", "ast", "stl", "blk", "tov", "tpm", "fga", "fta", "fgm", "ftm"]].agg(["sum", "count"])
+    cols = ["pts", "reb", "ast", "stl", "blk", "tov", "tpm", "fga", "fta", "fgm", "ftm"]
+    w = game_weights(g, pd.read_csv(M.DATA / f"schedule_{season.t}.csv"))
+    gw = g[cols].mul(w, axis=0).assign(id=g["id"], n=w)
+    td = gw.groupby("id")[cols + ["n"]].sum()
+    td.columns = pd.MultiIndex.from_tuples([(c, "sum") for c in cols] + [("pts", "count")])
     n = df["id"].map(td[("pts", "count")]).fillna(0).to_numpy()
     for k in ("pts", "reb", "ast", "stl", "blk", "tov", "tpm", "fga", "fta"):
         tot = df["id"].map(td[(k, "sum")]).fillna(0).to_numpy()
