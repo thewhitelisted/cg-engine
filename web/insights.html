@@ -290,7 +290,9 @@ ol, ul { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
     <details><summary>Show data</summary><div class="scroll"><table id="tab-days"></table></div></details>
   </figure>
   <p class="evidence"><b>Evidence</b>About 5% less matchup error than the simpler engine on both test seasons (0.130 → 0.123 and
-  0.130 → 0.124), with calibration within 2.3 percentage points in every range.</p>
+  0.130 → 0.124), with calibration within 2.3 percentage points in every range. A stricter replay that gives the model only
+  what was known on each day (projections plus games played so far) scores the current engine at 0.124 and 0.123, with category
+  chances within 2 percentage points of reality in every range, so the result holds without any hindsight.</p>
 
   <h3>4.6 Season simulation and expected winnings</h3>
   <p>The rest of the season is simulated on the league's real schedule: the current week uses the weekly engine above, and each
