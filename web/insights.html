@@ -151,7 +151,8 @@ ol, ul { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
   <p>Two further checks apply. <b>Calibration:</b> predictions are grouped into ranges (0–10%, 10–20%, …), and in each range with at
   least 200 predictions the average predicted chance must be within 4 percentage points of how often it happened. <b>Not luck:</b> for
   small improvements, the matchups are resampled 2,000 times at random (with repeats allowed) and the difference in error is
-  recomputed each time; the middle 95% of those differences must sit entirely below zero.</p>
+  recomputed each time; the middle 95% of those differences must sit entirely below zero. When several ideas are tested at
+  once, the bar rises to the middle 99%, so that the chance of any one passing by luck stays around 5%.</p>
   <p>Player projections are scored with a related measure, the CRPS, which rewards forecasts that are both close to the truth and
   honest about how uncertain they are. Games-played predictions are scored by squared error.</p>
 
@@ -184,6 +185,17 @@ ol, ul { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
   </div>
   <p class="evidence"><b>Evidence</b>For rest-of-season points, the blend had 37% less error than the projection alone and 30% less than
   this season's average alone, on a season not used to estimate \(K\).</p>
+  <p><b>Traded players.</b> After a trade, a player's role usually changes, so games with the old team say less about the future.
+  The model finds trades from the NBA schedule (the games a player played stop matching one team's schedule and start matching
+  another's) and counts each pre-trade game at a fraction \(w\) of a normal game:</p>
+  <div class="eq">
+    <div>\[ \text{rate} = \frac{K \cdot \text{projection} + w \sum_{\text{before}} x_g + \sum_{\text{after}} x_g}{K + w\, n_{\text{before}} + n_{\text{after}}}, \qquad w = 0.2 \]</div>
+    <p class="where">\(x_g\) is the stat in game \(g\), and \(n_{\text{before}}\), \(n_{\text{after}}\) count games before and after the
+    trade. \(w = 0.2\) was estimated from 2024-25. For players who were never traded nothing changes.</p>
+  </div>
+  <p class="evidence"><b>Evidence</b>Per-game error for traded players fell on both test seasons and on 2021-22, with the 99% range entirely
+  below zero. On 2024-25's 36 traded players, the points projection ten games after the trade was closer to what they actually
+  did for 25 of them. Ignoring pre-trade games completely also helped, but not by enough to pass.</p>
 
   <h3>4.3 Availability: who plays and who starts</h3>
   <p><b>Share of games played.</b> Each player's expected share of games blends the preseason estimate with this season's record,
@@ -292,8 +304,16 @@ ol, ul { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
     measured at 0.245).</p>
   </div>
   <p>Each simulation plays out every remaining week, seeds the top 8 by category record into the playoff bracket, and plays the three
-  playoff rounds using each roster's real games in those weeks. Repeating this thousands of times gives each team's chance of each
-  finish, and expected winnings:</p>
+  playoff rounds using each roster's real games in those weeks. NBA teams with poor records tend to rest players in March, so
+  for the playoff weeks each player's expected games are scaled by their team's record from the previous season:</p>
+  <div class="eq">
+    <div>\[ \text{games}_{\text{March}} = \text{games} \times \min\!\Big(1.05,\; \max\!\big(0.5,\; 1 + \tfrac{a + b \cdot \text{win \%}}{0.777}\big)\Big) \]</div>
+    <p class="where">\(a\) and \(b\) come from how much players' participation dropped in past March windows compared with the rest of
+    the season (0.777 is the usual share of games played). This rule improved predictions of March games in all six seasons it
+    was tested on, but the improvement has not yet been large enough to be statistically confirmed, so it is labelled
+    unvalidated and will be re-tested on this season's March.</p>
+  </div>
+  <p>Repeating the simulation thousands of times gives each team's chance of each finish, and expected winnings:</p>
   <div class="eq">
     <div>\[ \text{expected winnings} = \$150\cdot P(\text{1st}) + \$90\cdot P(\text{2nd}) + \$60\cdot P(\text{3rd}) \]</div>
   </div>
@@ -305,7 +325,7 @@ ol, ul { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
   <p>Figure 7 collects the evidence above. Each bar compares the model with and without one component, on that component's own error
   measure, so bars show how much each part helps but are not directly comparable to each other.</p>
   <figure class="fig">
-    <div class="plot" id="fig-kept" style="height:300px"></div>
+    <div class="plot" id="fig-kept" style="height:330px"></div>
     <figcaption><b>Figure 7. Reduction in error from each component</b>, on data not used to build it. Hover for the values before and
     after.</figcaption>
     <details><summary>Show data</summary><div class="scroll"><table id="tab-kept"></table></div></details>
@@ -317,6 +337,10 @@ ol, ul { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
   <div class="scroll"><table>
     <tr><th>Effect</th><th class="l">Finding</th></tr>
     <tr><td>Players in the same game, and nights when the whole league runs hot or cold</td><td class="l"><span class="tag no">Excluded</span>Players facing each other do move together slightly (about 0.03 for points), but it made no difference to matchup chances.</td></tr>
+    <tr><td>Back-to-back games</td><td class="l"><span class="tag no">Excluded</span>Players play the second night of a back-to-back about 95% as often as other games, and assists, steals and blocks dip slightly. Both adjustments helped every season, but too little to pass the 99% bar.</td></tr>
+    <tr><td>Scaling projections down early in the season</td><td class="l"><span class="tag no">Excluded</span>There is no early-season effect: players play about 3–8% fewer minutes than ESPN projects in every week of the season, which the projections already absorb.</td></tr>
+    <tr><td>Opponent strength in future weeks</td><td class="l"><span class="tag no">Excluded</span>Helped at every horizon (1–4 weeks ahead) in every season, but narrowly missed the 99% bar.</td></tr>
+    <tr><td>Re-estimating the weekly engine's two settings on ten times more data</td><td class="l"><span class="tag same">Confirmed</span>The current values (\(\kappa = 1.041\), \(\psi = 0.35\)) did slightly better on unseen seasons than the re-estimated ones.</td></tr>
     <tr><td>Teammates taking each other's stats</td><td class="l"><span class="tag same">No effect</span>Once games played are accounted for, teammates' stats don't rise and fall together; only their games played do, which §4.6 includes.</td></tr>
     <tr><td>Letting the market weight be re-estimated for each season separately</td><td class="l"><span class="tag no">Excluded</span>Less accurate overall than drawing it from a range estimated across seasons.</td></tr>
     <tr><td>An outside projection system (DARKO) as an extra input</td><td class="l"><span class="tag no">Excluded</span>More accurate for single stats, less accurate for overall player value in 2 of 3 seasons.</td></tr>
@@ -334,7 +358,8 @@ ol, ul { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
     <li><b>Surprises are slightly under-predicted.</b> The model's 95% ranges for player value contain the real result about 92% of the
     time, so very large surprises happen a little more often than it expects.</li>
     <li><b>"Day-to-day" injury tags are not used.</b> Past data on these tags isn't available, so their effect can't be estimated yet.</li>
-    <li><b>Game context covers the current week only.</b> Future weeks in the season simulation don't yet account for opponents.</li>
+    <li><b>Game context covers the current week only.</b> Opponent strength for future weeks helped but did not pass the bar.</li>
+    <li><b>The March rest rule is unvalidated.</b> It has helped in every season tested but not yet by a statistically clear margin.</li>
     <li><b>The market's usefulness varies by season.</b> The model allows for this but cannot know in advance which kind of season this one is.</li>
   </ul>
 
@@ -342,12 +367,11 @@ ol, ul { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
   <ol>
     <li><b>Day-to-day tags.</b> Every player's ESPN status is being recorded; once about 300 games by day-to-day players exist, their
     chance of playing will be estimated and tested.</li>
-    <li><b>Early-season minutes.</b> Do players play fewer minutes than projected in the first weeks of every season? If so, real stats
-    should take over sooner.</li>
-    <li><b>Opponents in future weeks</b>, including the playoff weeks.</li>
-    <li><b>Back-to-back games:</b> whether a star's chance of playing drops on the second night.</li>
-    <li><b>Real lineups:</b> using the lineups managers actually set rather than assuming each manager starts their best players.</li>
-    <li><b>Full-season check:</b> scoring every weekly prediction of 2026-27 against what happened.</li>
+    <li><b>Real lineups.</b> Every team's daily lineup is now being recorded. Once there are a few weeks of it, the test is whether
+    using the lineups managers actually set, rather than assuming each manager starts their best players, sharpens the odds.</li>
+    <li><b>The March rest rule</b>, re-tested on this season's playoff weeks.</li>
+    <li><b>Full-season check:</b> every weekly prediction of 2026-27 scored against what happened, plus a re-test of the outside
+    projection system on this season.</li>
   </ol>
 
   <p class="back"><a href="./">← Back to the league page</a></p>
@@ -498,6 +522,7 @@ table("tab-days", ["Season · engine", "Day 1", "2", "3", "4", "5", "6"],
 const KEPT = [
   ["Availability (players currently out)", 50, "squared error 0.148 → 0.074"],
   ["In-season updating", 37, "rest-of-season points error 37% lower than projection alone"],
+  ["Traded players", 2, "per-game error after trades about 2% lower"],
   ["Draft-market information (player value)", 25, "player value error 7.02 → 5.29"],
   ["Market information (projection error)", 7, "CRPS 1.564 → 1.457"],
   ["Weekly matchup engine", 5.4, "matchup error 0.130 → 0.123"],
