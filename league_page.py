@@ -126,33 +126,50 @@ def week_games(lv, g, start, end):
     return out
 
 
-def top_performers(lv, g, start, end, n=6):
+def stat_line(r):
+    """One player's week as text: counting stats, shooting percentages, turnovers."""
+    pct = lambda m, a: f"{m / a:.3f}".lstrip("0") if a else "–"
+    return (f"{r.pts:.0f} pts · {r.reb:.0f} reb · {r.ast:.0f} ast · {r.stl:.0f} stl · {r.blk:.0f} blk · {r.tpm:.0f} 3pm · "
+            f"{pct(r.fgm, r.fga)} FG · {pct(r.ftm, r.fta)} FT · {r.tov:.0f} TO")
+
+
+def performers(lv, g, start, end, n=6):
+    """Rostered players' 9-category production this week against what the model expected from the same games.
+
+    Production is the page's value scale without the replacement-level baseline (sum over categories of the
+    stat over its spread, turnovers negative), so it stays positive and a percentage gap is meaningful.
+    Expected = the model's current per-game rates x games played. Returns (best, worst)."""
     df = lv.season.df
     sch = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
     sp = set(sch[(sch.date >= start) & (sch.date <= end)].scoring_period)
     if not len(g):
-        return []
-    wk = g[g.scoring_period.isin(sp)]
+        return [], []
     owner = {e[0]: t["name"] for t in lv.lg["teams"] for e in t["roster"]}
-    wk = wk[wk["id"].isin(owner)]
+    idx = {int(i): k for k, i in enumerate(df["id"])}
+    wk = g[g.scoring_period.isin(sp) & g["id"].isin(owner) & g["id"].isin(idx)]
     if not len(wk):
-        return []
+        return [], []
     tot = wk.groupby("id")[["pts", "reb", "ast", "stl", "blk", "tpm", "tov", "fgm", "fga", "ftm", "fta"]].sum()
     tot["g"] = wk.groupby("id").size()
     _, scale = M.static_value(df)
     mu = np.zeros((len(tot), len(M.STATK)))
-    for s in ("fga", "fta", "tpm", "reb", "ast", "stl", "blk", "tov", "pts"):
-        mu[:, M.SK[s]] = tot[s].to_numpy()
+    for st in ("fga", "fta", "tpm", "reb", "ast", "stl", "blk", "tov", "pts"):
+        mu[:, M.SK[st]] = tot[st].to_numpy()
     mu[:, M.SK["fgx"]] = tot["fgm"] - M.LG_FG * tot["fga"]
     mu[:, M.SK["ftx"]] = tot["ftm"] - M.LG_FT * tot["fta"]
-    tot["score"] = M.value_from(mu, np.ones(len(tot)), scale)
+    exp = df[M.STATK].to_numpy(float)[[idx[int(p)] for p in tot.index]] * tot["g"].to_numpy()[:, None]
+
+    def production(m):
+        return sum(sign * m[:, j] / sd for j, _, sd, sign in scale.values())
+    tot["actual"], tot["expected"] = production(mu), production(exp)
+    tot["gap"] = tot["actual"] - tot["expected"]
     names = g.drop_duplicates("id").set_index("id")["name"]
-    out = []
-    for pid, r in tot.sort_values("score", ascending=False).head(n).iterrows():
-        out.append({"player": names.get(pid, str(pid)), "team": owner[pid], "g": int(r.g),
-                    "line": f"{r.pts:.0f} pts · {r.reb:.0f} reb · {r.ast:.0f} ast · {r.stl:.0f} stl · {r.blk:.0f} blk · "
-                            f"{r.tpm:.0f} 3pm · {r.fgm:.0f}-{r.fga:.0f} FG"})
-    return out
+
+    def rows(sel):
+        return [{"player": names.get(pid, str(pid)), "team": owner[pid], "g": int(r.g), "line": stat_line(r),
+                 "pct": float(r.gap / r.expected) if r.expected > 0 else None} for pid, r in sel.iterrows()]
+    return (rows(tot[tot.gap > 0].sort_values("gap", ascending=False).head(n)),
+            rows(tot[tot.gap < 0].sort_values("gap").head(n)))
 
 
 def abbrevs(lg):
@@ -531,7 +548,7 @@ def build(lv, history=None, sb=None, tx=None):
     return {"period": lv.period, "dates": f"{start:%b %-d} – {end:%b %-d}", "start": f"{start:%Y-%m-%d}",
             "end": f"{end:%Y-%m-%d}", "games": games, "today": playing_today(lv.lg, sb, now),
             "standings": standings(lv.lg), "grid": week_grid(lv.lg, games, lv.period), "h2h": head_to_head(lv.lg),
-            "allplay": all_play(lv.lg), "records": league_records(lv.lg), "top": top_performers(lv, g, start, end),
+            "allplay": all_play(lv.lg), "records": league_records(lv.lg), **dict(zip(("top", "worst"), performers(lv, g, start, end))),
             "last": last_week(lv.lg, history), "scorecard": scorecard(lv.lg, history),
             "moves": recent_moves(tx, lv.lg, now), "awards": awards(lv.lg, history),
             "ranks": category_ranks(lv.lg), "activity": activity(lv.lg, tx, history), "updated": now.strftime("%a %b %-d, %-I:%M %p ET")}
@@ -664,6 +681,7 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
   %(allplay)s
   %(records)s
   %(top)s
+  %(worst)s
   %(last)s
   %(scorecard)s
   %(moves)s
@@ -774,7 +792,7 @@ def section(title, body, note="", sid=""):
 
 NAV = [("matchups", "Matchups"), ("today", "Today"), ("awards", "Awards"), ("standings", "Standings"),
        ("weeks", "Weekly"), ("ranks", "Cat ranks"), ("h2h", "Head to head"), ("allplay", "All-play"),
-       ("records", "Records"), ("top", "Top players"), ("odds", "Odds"), ("moves", "Moves"), ("activity", "Activity")]
+       ("records", "Records"), ("top", "Best players"), ("worst", "Worst players"), ("odds", "Odds"), ("moves", "Moves"), ("activity", "Activity")]
 
 
 def render(data):
@@ -860,13 +878,21 @@ def render(data):
                                "Best single matchups so far. Percentages need at least 75% of the league's average attempts; "
                                "counting stats leave out the two-week All-Star matchup.", "records")
 
-    top_html = ""
-    if data["top"]:
-        tp = "".join(f'<tr><td>{e(r["player"])}</td><td class="l">{e(r["team"])}</td><td>{r["g"]}</td>'
-                     f'<td class="l">{e(r["line"])}</td></tr>' for r in data["top"])
-        top_html = section("Top performers this week", f'<table><tr><th>Player</th><th class="l">Fantasy team</th><th>G</th>'
-                           f'<th class="l">Line</th></tr>{tp}</table>',
-                           "Rostered players, games through last night, ranked by 9-category production.", "top")
+    def players_table(rows, title, sid, note):
+        if not rows:
+            return ""
+        tr = "".join(f'<tr><td>{e(r["player"])}</td><td class="l">{e(r["team"])}</td><td>{r["g"]}</td>'
+                     f'<td class="{"pos" if (r["pct"] or 0) > 0 else "neg"}">{"—" if r["pct"] is None else f"{100 * r['pct']:+.0f}%"}</td>'
+                     f'<td class="l">{e(r["line"])}</td></tr>' for r in rows)
+        return section(title, f'<table><tr><th>Player</th><th class="l">Fantasy team</th><th>G</th><th>vs expected</th>'
+                              f'<th class="l">Line</th></tr>{tr}</table>', note, sid)
+
+    how = ("vs expected: 9-category production against what the model expected from the same number of games. "
+           "Ranked by the size of the gap, so a big game from a big role outranks a big percentage from a small one. "
+           "Rostered players, games through last night.")
+    top_html = players_table(data["top"], "Best performers this week", "top", how)
+    worst_html = players_table(data.get("worst") or [], "Worst performers this week", "worst",
+                               how + " Below −100%: turnovers and missed shots outweighed everything else.")
 
     last_html = ""
     if data["last"]:
@@ -943,9 +969,9 @@ def render(data):
     fill = {"period": str(data["period"]), "dates": e(data["dates"]), "updated": e(data["updated"]), "headline": headline,
             "cards": "\n  ".join(card(gm, data["start"], data["end"]) for gm in data["games"]), "today": today,
             "standings": standings_html, "grid": grid_html, "h2h": h2h_html, "allplay": allplay_html,
-            "records": records_html, "top": top_html, "last": last_html, "scorecard": score_html, "moves": moves_html,
+            "records": records_html, "top": top_html, "worst": worst_html, "last": last_html, "scorecard": score_html, "moves": moves_html,
             "later": later, "awards": awards_html, "ranks": ranks_html, "activity": activity_html}
-    present = {k for k in ("today", "awards", "standings", "weeks", "ranks", "h2h", "allplay", "records", "top", "odds",
+    present = {k for k in ("today", "awards", "standings", "weeks", "ranks", "h2h", "allplay", "records", "top", "worst", "odds",
                            "moves", "activity") if f'id="{k}"' in "".join(fill.values())} | {"matchups"}
     fill["nav"] = ('<nav class="jump" aria-label="Sections">' +
                    "".join(f'<a href="#{k}">{lbl}</a>' for k, lbl in NAV if k in present) + "</nav>")
