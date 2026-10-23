@@ -19,7 +19,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16.5px/1.65 Georgia, "Iowan Old Style", "Times New Roman", serif; }
 .wrap { max-width: 780px; margin: 0 auto; padding: 28px 16px 72px; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
-.sans, h1, h2, h3, .fig figcaption, .meta, .back, table, .key, .tip, .tag { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.sans, h1, h2, h3, .fig figcaption, .meta, .back, table, .key, .tip, .tag, .flow { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 h1 { font-size: 30px; line-height: 1.15; margin: 6px 0 4px; letter-spacing: -.01em; }
 h2 { font-size: 21px; margin: 26px 0 0; padding-top: 10px; border-top: 1px solid var(--rule); }
 h3 { font-size: 16.5px; margin: 10px 0 0; }
@@ -37,6 +37,8 @@ a { color: var(--s1); }
   grid-template-columns: minmax(0, 1fr); min-width: 0; }
 .eq > div { overflow-x: auto; overflow-y: hidden; }
 .eq .where { font-size: 14.5px; color: var(--ink2); }
+.evidence { border-left: 3px solid var(--good); padding: 2px 0 2px 12px; font-size: 15px; color: var(--ink2); }
+.evidence b { color: var(--ink); font-family: system-ui, sans-serif; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; margin-right: 6px; }
 .fig { margin: 4px 0 0; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 14px 10px; display: grid; gap: 8px; min-width: 0; }
 .fig figcaption { font-size: 13.5px; color: var(--ink2); line-height: 1.5; }
 .fig figcaption b { color: var(--ink); }
@@ -46,15 +48,24 @@ a { color: var(--s1); }
 .plot .val { fill: var(--ink); font-weight: 600; }
 .key { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--ink2); }
 .key i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.flow { display: grid; gap: 0; }
+.step { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--rule);
+  border-radius: 8px; background: var(--bg); }
+.step .n { width: 26px; height: 26px; border-radius: 50%; background: var(--s1); color: #fff; font-weight: 700; font-size: 13px;
+  display: grid; place-items: center; }
+.step b { display: block; font-size: 14.5px; }
+.step span { font-size: 13px; color: var(--ink2); }
+.step.out .n { background: var(--ink); color: var(--bg); }
+.arrow { text-align: center; color: var(--muted); font-size: 14px; line-height: 1.2; padding: 2px 0; }
 details { font-size: 13.5px; }
 details summary { cursor: pointer; color: var(--muted); font-family: system-ui, sans-serif; }
 table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; margin-top: 6px; }
-th, td { padding: 5px 8px; border-bottom: 1px solid var(--rule); text-align: right; white-space: nowrap; }
-th:first-child, td:first-child { text-align: left; white-space: normal; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--rule); text-align: right; vertical-align: top; }
+th:first-child, td:first-child { text-align: left; }
+td.l, th.l { text-align: left; }
 th { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .scroll { overflow-x: auto; }
-.tag { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 0 7px; border-radius: 999px; margin-right: 6px; vertical-align: 2px; }
-.kept { color: var(--good); border: 1px solid var(--good); }
+.tag { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 0 7px; border-radius: 999px; margin-right: 6px; white-space: nowrap; }
 .no { color: var(--bad); border: 1px solid var(--bad); }
 .same { color: var(--muted); border: 1px solid var(--rule); }
 ol, ul { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
@@ -68,244 +79,275 @@ ol, ul { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
   <p class="back"><a href="./">← Back to the league page</a></p>
   <header>
     <p class="meta">The Cool Guys · technical notes · last updated Oct 23, 2026</p>
-    <h1>Predicting a 9-category fantasy league: how the model works and what has been tested</h1>
+    <h1>A model for 9-category head-to-head fantasy basketball</h1>
   </header>
 
   <section class="abstract">
     <b class="h">Abstract</b>
-    <p>The league page shows each team's chance to win its matchup. Those chances come from a model that projects every player's
-    stats, estimates who will actually play, and turns the totals into category and matchup chances. Every change to the model
-    follows the same rule: the test is written down before any results exist, the change is built on one past NBA season and
-    judged on seasons it never saw, and it is kept only if it is more accurate on all of them. So far 13 changes have been kept and
-    17 rejected or not built. The largest gains came from blending in real stats as the season goes on (37% less error), from
-    tracking who actually plays (half the error for injured players), and from a rebuilt weekly engine (about 5% less error).
-    The newest change, adjusting for the opponent and for injured teammates, helps a little (0.2–0.4%) and will matter more as
-    the season goes on.</p>
+    <p>The chances on the league page come from a model with six parts: player projections that combine stat forecasts with
+    draft-market information, updating from this season's games, a model of who actually plays, adjustments for each game's
+    opponent and missing teammates, a weekly engine that turns player totals into category and matchup chances, and a simulation
+    of the rest of the season and the playoffs. Every part is checked the same way: its rules are fixed in advance, its numbers are
+    estimated from one past NBA season, and it is judged on other seasons it never saw. Each part is included only because it made
+    the predictions more accurate on all of them. This paper describes each part, the math behind it, and the evidence for it.</p>
   </section>
 
   <div class="findings">
-    <div class="find"><div class="v">13 / 30</div><div class="k">changes kept out of everything tested</div></div>
-    <div class="find"><div class="v">−37%</div><div class="k">error from blending real stats into projections</div></div>
+    <div class="find"><div class="v">−37%</div><div class="k">error from updating with this season's stats</div></div>
     <div class="find"><div class="v">−50%</div><div class="k">error predicting games for injured players</div></div>
-    <div class="find"><div class="v">~5%</div><div class="k">less error in weekly matchup chances</div></div>
+    <div class="find"><div class="v">−25%</div><div class="k">error from using draft-market information</div></div>
+    <div class="find"><div class="v">−5%</div><div class="k">error in weekly matchup chances from the weekly engine</div></div>
   </div>
 
-  <h2>1. Introduction</h2>
-  <p>In a 9-category head-to-head league, each week two teams compare totals in points, rebounds, assists, steals, blocks,
-  three-pointers, turnovers (fewer is better), field-goal percentage and free-throw percentage. The team that wins at least 5 of the
-  9 categories wins the week. To give a chance for that, the model needs three things: how much each player will produce per game,
-  how many games each player will actually play, and how uncertain both of those are.</p>
-  <p>This page describes each part of the model, the math behind the parts that were built for this league or aren't obvious, and
-  the evidence for every change, including the ones that failed.</p>
+  <h2>1. The problem</h2>
+  <p>Each week two teams compare totals in nine categories: points, rebounds, assists, steals, blocks, three-pointers, turnovers
+  (fewer is better), field-goal percentage and free-throw percentage. Winning at least 5 of the 9 wins the week. The top 8 teams by
+  category record reach a three-round playoff in March, and the top three are paid $150, $90 and $60.</p>
+  <p>To give a chance for any of this, the model needs to know how much each player produces per game, how many games each player
+  will actually play and start, how uncertain both are, and how those uncertainties add up across a roster, a week and a season.</p>
 
-  <h2>2. How changes are evaluated</h2>
-  <p>Each change goes through the same four steps.</p>
+  <h2>2. Model overview</h2>
+  <p>Figure 1 shows how the parts connect. Each step feeds the next; the output of step 5 is the weekly chance shown on the league
+  page, and step 6 repeats steps 4–5 for every remaining week to produce season-long numbers.</p>
+  <figure class="fig">
+    <div class="flow" role="list">
+      <div class="step" role="listitem"><div class="n">1</div><div><b>Player projections</b><span>Per-game stats for every player from ESPN's forecast and the player's history, adjusted with average draft position (§4.1).</span></div></div>
+      <div class="arrow">↓</div>
+      <div class="step" role="listitem"><div class="n">2</div><div><b>In-season updating</b><span>Each player's rates move toward what they have actually done this season, faster for stable stats (§4.2).</span></div></div>
+      <div class="arrow">↓</div>
+      <div class="step" role="listitem"><div class="n">3</div><div><b>Availability</b><span>How often each player plays, how long current absences last, and who starts under the 10-player daily limit (§4.3).</span></div></div>
+      <div class="arrow">↓</div>
+      <div class="step" role="listitem"><div class="n">4</div><div><b>Game context</b><span>Each game adjusted for the opponent and for teammates who are out (§4.4).</span></div></div>
+      <div class="arrow">↓</div>
+      <div class="step" role="listitem"><div class="n">5</div><div><b>Weekly matchup engine</b><span>Team totals with uncertainty, nine category chances, then one matchup chance (§4.5).</span></div></div>
+      <div class="arrow">↓</div>
+      <div class="step out" role="listitem"><div class="n">6</div><div><b>Season simulation</b><span>The real remaining schedule and playoff bracket simulated thousands of times (§4.6).</span></div></div>
+    </div>
+    <figcaption><b>Figure 1. Structure of the model.</b></figcaption>
+  </figure>
+
+  <h2>3. Methodology</h2>
+  <h3>3.1 Validation design</h3>
+  <p>Every part of the model is held to the same standard.</p>
   <ol>
-    <li><b>Pre-registration.</b> The test, the data and the pass rule are written down before any results are computed, so results
-    can't move the goalposts.</li>
-    <li><b>Fitting.</b> Any new numbers the change needs are estimated from one past season (usually 2024-25).</li>
-    <li><b>Testing on unseen seasons.</b> The change is judged on seasons that played no part in building it (usually 2025-26 and
-    2023-24). Past seasons are replayed with random 13-player rosters, day by day, and the model's chances are compared with what
+    <li><b>Rules fixed in advance.</b> What will be measured, on which data, and what counts as a pass is written down before any
+    results are computed. Results can't change the test.</li>
+    <li><b>Estimated on one season, judged on others.</b> Any numbers a part needs are estimated from one past season (usually
+    2024-25). The part is then judged on seasons that played no role in building it (usually 2025-26 and 2023-24). For the weekly
+    engine, those seasons are replayed day by day with random 13-player rosters, and the model's chances are compared with what
     really happened.</li>
-    <li><b>Decision.</b> The change is kept only if it passes on every test season. A failed test is final.</li>
+    <li><b>Better everywhere.</b> A part is included only if it is more accurate on every test season, not better on one and worse
+    on another. If it fails, it stays out.</li>
   </ol>
 
-  <h3>2.1 Prediction error (the main score)</h3>
-  <p>For matchup chances the score is the <i>Brier score</i>: the average squared gap between the chance given and the result.</p>
+  <h3>3.2 Measuring accuracy</h3>
+  <p>For any chance the model gives, the main score is the Brier score: the average squared gap between the chance and the result.</p>
   <div class="eq">
     <div>\[ \text{error} = \frac{1}{N}\sum_{i=1}^{N} (p_i - y_i)^2 \]</div>
-    <p class="where">\(p_i\) is the chance the model gave in matchup \(i\) (between 0 and 1), \(y_i\) is 1 if that team won and 0 if it
-    lost, and \(N\) is the number of matchups. Saying 0.8 for a team that wins costs \((0.8-1)^2 = 0.04\); saying 0.8 for a team that
-    loses costs \(0.64\). Always saying 0.5 scores 0.25, so anything below 0.25 is better than guessing.</p>
+    <p class="where">\(p_i\) is the chance given for matchup \(i\) (between 0 and 1), \(y_i\) is 1 if that team won and 0 if it lost,
+    and \(N\) is the number of matchups. Saying 0.8 for a team that wins costs \((0.8-1)^2 = 0.04\); saying 0.8 for a team that loses
+    costs \(0.64\). Always answering 0.5 scores 0.25, so lower than 0.25 means better than guessing.</p>
   </div>
+  <p>Two further checks apply. <b>Calibration:</b> predictions are grouped into ranges (0–10%, 10–20%, …), and in each range with at
+  least 200 predictions the average predicted chance must be within 4 percentage points of how often it happened. <b>Not luck:</b> for
+  small improvements, the matchups are resampled 2,000 times at random (with repeats allowed) and the difference in error is
+  recomputed each time; the middle 95% of those differences must sit entirely below zero.</p>
+  <p>Player projections are scored with a related measure, the CRPS, which rewards forecasts that are both close to the truth and
+  honest about how uncertain they are. Games-played predictions are scored by squared error.</p>
 
-  <h3>2.2 Calibration</h3>
-  <p>A model can have a low error and still be systematically off, for example always too confident. So predictions are also
-  grouped into ranges (0–10%, 10–20%, …) and, in every range with at least 200 predictions, the average predicted chance must be
-  within 4 percentage points of how often it actually happened.</p>
+  <h2>4. Components</h2>
 
-  <h3>2.3 Is the improvement real?</h3>
-  <p>Small differences can appear by luck. For the newest tests, the matchups were resampled 2,000 times (a <i>bootstrap</i>):
-  each time, a new set of matchups is drawn at random from the ones played, with repeats allowed, and the difference in error is
-  recomputed. The change passes only if the middle 95% of those 2,000 differences is entirely below zero, meaning it helps in
-  essentially every reshuffle of the data.</p>
-
-  <h2>3. The model</h2>
-
-  <h3>3.1 Player projections before the season</h3>
-  <p>Projections start from ESPN's and the players' recent history, then get adjusted with <i>ADP</i> (average draft position:
-  where a player typically goes in drafts). Drafters collectively know about injuries and role changes that stat projections miss.
-  Each player's projected value \(v\) is moved toward the value implied by their draft position:</p>
+  <h3>4.1 Player projections and draft-market information</h3>
+  <p>Per-game projections start from ESPN's forecast combined with the player's previous seasons. On their own these miss things
+  that drafters know: an injury that isn't fully healed, a new role on a new team, a coach's plans. That knowledge shows up in
+  <i>ADP</i> (average draft position, where a player typically goes in drafts). The model moves each player's projected value toward
+  the value implied by their ADP:</p>
   <div class="eq">
-    <div>\[ v_{\text{adjusted}} = v_{\text{model}} + \beta\,\big(v_{\text{market}} - v_{\text{model}}\big) \]</div>
-    <p class="where">\(v_{\text{market}}\) is the value of whoever the model ranks at that player's ADP spot. \(\beta\) is how much
-    to trust the market, estimated from past seasons. The "belief layer" (§4.1) goes further: it lets \(\beta\) differ between
-    seasons, because some years the market is right more often than others, and it treats \(\beta\) as uncertain rather than fixed.</p>
+    <div>\[ v = v_{\text{proj}} + \beta\,\big(v_{\text{market}} - v_{\text{proj}}\big) \]</div>
+    <p class="where">\(v_{\text{proj}}\) is the value from the stat projection and \(v_{\text{market}}\) is the value of the player the
+    projections rank at that ADP spot. \(\beta\) is how much to trust the market. Because the market is right more often in some
+    seasons than others, \(\beta\) is not a single fixed number: each simulated season draws its own \(\beta\) from a range estimated
+    across past seasons. The adjustment applies only to players with a real ADP; others keep their projection.</p>
   </div>
+  <p class="evidence"><b>Evidence</b>Player value predictions with market information had 25% less error on a season held out from
+  every fitting step (7.02 → 5.29). Projection error (CRPS) is 7% lower than projections without market information, averaged over
+  three seasons each left out of its own fit (1.564 → 1.457).</p>
 
-  <h3>3.2 During the season: real stats take over</h3>
-  <p>Each player's expected per-game stats mix the preseason projection with what they've actually done:</p>
+  <h3>4.2 Updating with this season's games</h3>
+  <p>As the season goes on, each player's expected per-game stats blend the projection with what they've actually done:</p>
   <div class="eq">
     <div>\[ \text{rate} = \frac{K \cdot \text{projection} + n \cdot \text{season average}}{K + n} \]</div>
-    <p class="where">\(n\) is games played so far and \(K\) is how many games it takes for real stats to get half the weight. \(K\)
-    was estimated separately for each stat from past seasons: 9.5 games for points, 13.6 for rebounds, 24 for steals and blocks
-    (those are noisier, so the model waits longer before believing them).</p>
+    <p class="where">\(n\) is games played this season. \(K\) is the number of games at which real stats and the projection get equal
+    weight, estimated per stat from past seasons: 9.5 games for points, 13.6 for rebounds, about 24 for steals and blocks. Steals and
+    blocks are noisier from game to game, so real stats need longer to become trustworthy. The model's uncertainty about each rate also
+    shrinks as \(n\) grows.</p>
   </div>
+  <p class="evidence"><b>Evidence</b>For rest-of-season points, the blend had 37% less error than the projection alone and 30% less than
+  this season's average alone, on a season not used to estimate \(K\).</p>
 
-  <h3>3.3 Who actually plays</h3>
-  <p>Two pieces. First, each player's share of games played blends their preseason expectation with this season's record, the
-  same way as above, with \(K_{gp} = 34\) team games. Second, for a player who is out, the model uses how long absences actually
-  last. From 3,329 real absences in three seasons, \(S(m)\) is the share that lasted at least \(m\) games (Figure 1).</p>
+  <h3>4.3 Availability: who plays and who starts</h3>
+  <p><b>Share of games played.</b> Each player's expected share of games blends the preseason estimate with this season's record,
+  using the same formula as §4.2 with \(K = 34\) team games.</p>
+  <p><b>Current absences.</b> For a player who is out (listed out by ESPN, or has missed 2 or more games in a row), the model uses how
+  long absences actually last. Across 3,329 absences in three seasons, \(S(m)\) is the share that lasted at least \(m\) games (Figure 2):</p>
   <div class="eq">
-    <div>\[ P(\text{still out at the } j\text{-th next game} \mid \text{out for } m \text{ so far}) = \frac{S(m+j)}{S(m)} \]</div>
-    <p class="where">For example, \(S(4) = 0.259\) and \(S(5) = 0.218\): a player who has missed 4 games is still out for the next one
-    with chance \(0.218 / 0.259 = 84\%\). Long absences tend to keep going; short ones usually end quickly.</p>
+    <div>\[ P(\text{still out at the } j\text{-th next game} \mid \text{out for } m \text{ games so far}) = \frac{S(m+j)}{S(m)} \]</div>
+    <p class="where">With \(S(4) = 0.259\) and \(S(5) = 0.218\), a player who has missed 4 games misses the next one with chance
+    \(0.218 / 0.259 = 84\%\). Absences that have already lasted a while tend to keep going.</p>
   </div>
   <figure class="fig">
     <div class="plot" id="fig-surv" style="height:240px"></div>
-    <figcaption><b>Figure 1. How long absences last.</b> Share of absences that lasted at least this many games (3,329 absences,
-    2023-24 to 2025-26). About half of absences end after one game; about one in four lasts 4 games or more.</figcaption>
+    <figcaption><b>Figure 2. How long absences last.</b> Share of absences lasting at least this many games (3,329 absences over three
+    seasons). About half end after one game; about one in four lasts 4 or more.</figcaption>
     <details><summary>Show data</summary><div class="scroll"><table id="tab-surv"></table></div></details>
   </figure>
-  <p>For the next few games, a healthy player who just played is more likely to play again than their season average suggests:</p>
+  <p><b>The next few games.</b> A healthy player who just played is more likely to play the next game than their season average
+  suggests, and this fades over the following games:</p>
   <div class="eq">
     <div>\[ P(\text{plays the } j\text{-th next game}) = \pi + (1-\pi)(1-\rho)^{j} \]</div>
-    <p class="where">\(\pi\) is the player's usual share of games played and \(\rho = 0.361\) (fit on 2024-25). For the very next game
-    the chance is close to 1 minus a small risk; it drifts back to \(\pi\) further out.</p>
+    <p class="where">\(\pi\) is the player's usual share of games played and \(\rho = 0.361\), estimated from 2024-25.</p>
   </div>
+  <p><b>Starting.</b> Only 10 players can start per day. On days with more than 10 available players, the model simulates which
+  10 a manager would start, by position eligibility and value, and counts only those games.</p>
+  <figure class="fig">
+    <div class="plot" id="fig-avail" style="height:200px"></div>
+    <figcaption><b>Figure 3. Predicting the remaining games of players who are currently out</b> (squared error, lower is better; 722
+    cases over three seasons). The model's availability component (bottom bar) against simpler alternatives.</figcaption>
+  </figure>
+  <p class="evidence"><b>Evidence</b>For players currently out, the availability component halves the error of the preseason estimate
+  (0.148 → 0.074) and beats it in every one of three test seasons; for all players it cuts error by 25%.</p>
 
-  <h3>3.4 From players to a matchup chance</h3>
-  <p>Adding up every remaining game gives each team an expected total \(\mu\) and an uncertainty (variance \(\sigma^2\)) in each
-  category. Only 10 players can start per day, so on crowded days the model simulates which 10 start. The chance team A wins a
-  counting category is</p>
-  <div class="eq">
-    <div>\[ p_c = \Phi\!\left( \frac{\mu_A - \mu_B}{\kappa_c \sqrt{\sigma_A^2 + \sigma_B^2}} \right) \]</div>
-    <p class="where">\(\Phi\) turns a gap measured in standard deviations into a probability (a gap of 0 gives 50%, a gap of 1
-    standard deviation gives 84%). \(\kappa_c = 1.041\) is a small widening factor fit on 2024-25 so the chances aren't overconfident.
-    For FG% and FT% the same idea is applied to each team's makes above league average per attempt.</p>
-  </div>
-  <p>The nine category chances then become one matchup chance. Categories aren't independent: a big week tends to lift points,
-  threes and assists together. Treating them as independent made the odds too extreme, so the number of categories won is given
-  extra spread \(\psi\):</p>
-  <div class="eq">
-    <div>\[ P(\text{win the week}) = 1 - \Phi\!\left( \frac{4.5 - \sum_c p_c}{\sqrt{(1+\psi)\sum_c p_c(1-p_c)}} \right) \]</div>
-    <p class="where">\(\sum_c p_c\) is the expected number of categories won and \(\sum_c p_c(1-p_c)\) is how much that number varies if
-    categories were independent. \(\psi = 0.35\) adds 35% more variance, the amount that matched 2024-25. Winning needs 5 of 9,
-    so the cut-off is 4.5.</p>
-  </div>
-
-  <h3>3.5 Game context (new, Oct 23)</h3>
-  <p><b>Opponent and pace.</b> Each game is adjusted for the team being played, using what that team has given up this season
-  compared with what the same players usually produce:</p>
+  <h3>4.4 Game context</h3>
+  <p><b>Opponent and pace.</b> Each game is scaled by what that game's opponent has allowed this season, compared with what the same
+  players usually produce:</p>
   <div class="eq">
     <div>\[ \mu_{\text{game}} = \mu \cdot f_o, \qquad f_o = 1 + \frac{n_o}{n_o + K}\left(\frac{A_o}{E_o} - 1\right) \]</div>
-    <p class="where">\(A_o\) is the total of a stat that players have produced against opponent \(o\) this season, \(E_o\) is what
-    those same players were expected to produce, and \(n_o\) is how many games \(o\) has played. The fraction
-    \(n_o/(n_o+K)\) starts at 0 and grows with games played (Figure 2), so a team that allowed a lot in two games barely counts,
-    while 40 games of evidence counts half. \(K\) is 20 games for assists, steals and turnovers and 40 for the others (fit on 2024-25).</p>
+    <p class="where">\(A_o\) is the total of a stat that players have produced against opponent \(o\), \(E_o\) is what those players were
+    expected to produce, and \(n_o\) is the number of games \(o\) has played. The weight \(n_o/(n_o+K)\) grows from 0 as the season goes on
+    (Figure 4), so a few lopsided games barely count. \(K\) is 20 games for assists, steals and turnovers and 40 for the other stats.
+    Field-goal percentage is adjusted the same way, as a change in makes per attempt; free-throw percentage is not adjusted.</p>
   </div>
   <figure class="fig">
     <div class="plot" id="fig-weight" style="height:230px"></div>
     <div class="key" id="key-weight"></div>
-    <figcaption><b>Figure 2. How much the opponent adjustment counts.</b> Weight \(n/(n+K)\) given to an opponent's record after
-    \(n\) games. Today (about 3 games in) it is around 5–13%, which is why the adjustment barely moves this week's odds.</figcaption>
+    <figcaption><b>Figure 4. Weight given to an opponent's record</b> after \(n\) games. Early in the season the adjustment is small;
+    by mid-season it carries close to half weight.</figcaption>
   </figure>
-  <p><b>Teammates out.</b> When a teammate who has been playing misses 2 or more games in a row, the remaining players get a bit
-  more of the stats:</p>
+  <p><b>Teammates out.</b> When a teammate who has been playing misses 2 or more games in a row, the players still available get a
+  little more of the team's production:</p>
   <div class="eq">
-    <div>\[ \mu_{\text{game}} = \mu \,(1 + \beta_s\, x), \qquad x = \frac{\text{minutes per game of absent teammates}}{240} \]</div>
-    <p class="where">240 is the total player-minutes in a game (5 players × 48 minutes). \(\beta_s\) was fit on 2024-25 for each
-    stat: 0.082 for points, 0.075 for assists. With a 30-minute player out, \(x = 0.125\), so a teammate's expected points rise by
-    \(0.082 \times 0.125 \approx 1\%\).</p>
+    <div>\[ \mu_{\text{game}} = \mu\,(1 + \beta_s\, x), \qquad x = \frac{\text{minutes per game of absent teammates}}{240} \]</div>
+    <p class="where">240 is the player-minutes in one game (5 players × 48 minutes). \(\beta_s\) is estimated per stat: 0.082 for points
+    and 0.075 for assists. With a 30-minute player out, \(x = 0.125\), so a teammate's expected points rise by about 1%.</p>
   </div>
-
-  <h2>4. Results</h2>
-  <p>Figure 3 shows every change that was kept and how much it reduced its own error. The rows use different error measures
-  (each compared with the model just before that change), so compare each bar with zero, not bars with each other.</p>
   <figure class="fig">
-    <div class="plot" id="fig-kept" style="height:330px"></div>
-    <figcaption><b>Figure 3. Kept changes: reduction in error.</b> Each bar is the drop in that component's error on seasons not used to
-    build it. Hover a bar for the before and after values.</figcaption>
-    <details><summary>Show data</summary><div class="scroll"><table id="tab-kept"></table></div></details>
+    <div class="plot" id="fig-forest" style="height:232px"></div>
+    <div class="key" id="key-forest"></div>
+    <figcaption><b>Figure 5. Effect of game context on matchup prediction error</b> (negative is better), with 95% ranges from 2,000
+    resamples, on two test seasons. Both adjustments help on both seasons, alone and together.</figcaption>
+    <details><summary>Show data</summary><div class="scroll"><table id="tab-forest"></table></div></details>
   </figure>
+  <p class="evidence"><b>Evidence</b>Together the two adjustments lower matchup error by 0.2–0.4% on both test seasons, with every day
+  of the week no worse. The effect is small because opponent records carry little weight early in the season.</p>
 
-  <h3>4.1 Projections</h3>
-  <p>The belief layer was improved three times. Each version beat the one before on projection error (the <i>CRPS</i>, which
-  rewards projections that are both close and honest about their uncertainty), averaged over three seasons.</p>
-  <figure class="fig">
-    <div class="plot" id="fig-belief" style="height:220px"></div>
-    <figcaption><b>Figure 4. Projection error by version</b> (lower is better), averaged over 2021-22, 2023-24 and 2025-26 with each
-    season left out of its own fitting. V0 uses no market information; V4 is what the model uses now.</figcaption>
-  </figure>
-
-  <h3>4.2 Who plays</h3>
-  <figure class="fig">
-    <div class="plot" id="fig-avail" style="height:200px"></div>
-    <figcaption><b>Figure 5. Predicting the rest-of-season games of players who are currently out</b> (squared error, lower is better;
-    722 cases over three seasons). Using the preseason estimate only (V0), blending in games played this season (V1), and adding the
-    absence-length curve of Figure 1 (V2, used now).</figcaption>
-  </figure>
-
-  <h3>4.3 The weekly engine</h3>
-  <p>The weekly engine was rebuilt once (L1b to L3). Figure 6 shows the error at each day of the week on both test seasons. Error
-  falls as the week goes on, because more of the week is already known. L3 is lower on every day of both seasons.</p>
+  <h3>4.5 Weekly matchup engine</h3>
+  <p>For each team, the engine adds up every remaining game of every player (steps 2–4), keeping both the known results so far this
+  week and the uncertainty in the rest. That gives an expected total \(\mu\) and a variance \(\sigma^2\) in each category. The chance
+  team A wins a counting category is</p>
+  <div class="eq">
+    <div>\[ p_c = \Phi\!\left( \frac{\mu_A - \mu_B}{\kappa \sqrt{\sigma_A^2 + \sigma_B^2}} \right) \]</div>
+    <p class="where">\(\Phi\) converts a gap measured in standard deviations into a probability: a gap of 0 gives 50%, a gap of one standard
+    deviation gives 84%. \(\kappa = 1.041\) slightly widens the uncertainty so the chances aren't overconfident. For FG% and FT% the same
+    formula is applied to each team's makes above league average per attempt.</p>
+  </div>
+  <p>The nine category chances then become one matchup chance. Categories are not independent: a strong week usually lifts points,
+  threes and assists together, which makes lopsided results like 7–2 more common than independence would predict. The model adds this
+  extra spread to the number of categories won:</p>
+  <div class="eq">
+    <div>\[ P(\text{win the week}) = 1 - \Phi\!\left( \frac{4.5 - \sum_c p_c}{\sqrt{(1+\psi)\sum_c p_c(1-p_c)}} \right) \]</div>
+    <p class="where">\(\sum_c p_c\) is the expected number of categories won and \(\sum_c p_c(1-p_c)\) is how much that number would vary
+    if categories were independent. \(\psi = 0.35\) adds 35% more variance, the amount estimated from 2024-25. Winning needs 5 of 9, so
+    the cut-off is 4.5.</p>
+  </div>
   <figure class="fig">
     <div class="plot" id="fig-days" style="height:260px"></div>
     <div class="key" id="key-days"></div>
-    <figcaption><b>Figure 6. Matchup prediction error by day of the week</b>, old engine (L1b) against the current one (L3), on two
-    seasons it never saw. Day 1 is after the first day's games.</figcaption>
+    <figcaption><b>Figure 6. Matchup prediction error through the week.</b> The full engine against a simpler one without short-term
+    availability, the daily starting limit and category dependence, on two test seasons. Error falls as the week goes on because more of
+    it is already known; the full engine is lower on every day of both seasons.</figcaption>
     <details><summary>Show data</summary><div class="scroll"><table id="tab-days"></table></div></details>
   </figure>
+  <p class="evidence"><b>Evidence</b>About 5% less matchup error than the simpler engine on both test seasons (0.130 → 0.123 and
+  0.130 → 0.124), with calibration within 2.3 percentage points in every range.</p>
 
-  <h3>4.4 Game context</h3>
-  <p>Three ideas were tested on Oct 23. Figure 7 shows the change in error for each, with the range that covers 95% of the bootstrap
-  reshuffles. A change helps only if its whole range sits left of zero.</p>
+  <h3>4.6 Season simulation and expected winnings</h3>
+  <p>The rest of the season is simulated on the league's real schedule: the current week uses the weekly engine above, and each
+  future week uses each team's projected weekly totals and their uncertainty. Uncertainty in a team's weekly total comes from three
+  places:</p>
+  <div class="eq">
+    <div>\[ \sigma^2_{\text{team}} = \sum_i g_i\,\sigma_i^2 \;+\; \gamma \sum_i g_i\,\mu_i^2 \;+\; \rho_{tm}\!\!\sum_{\substack{i \neq j \\ \text{same NBA team}}}\!\! \sqrt{\gamma g_i}\,\mu_i \sqrt{\gamma g_j}\,\mu_j \]</div>
+    <p class="where">\(g_i\) is player \(i\)'s expected games that week, \(\mu_i\) and \(\sigma_i^2\) their per-game average and game-to-game
+    variance. The first term is game-to-game noise. The second is uncertainty in how many games they play (\(\gamma = 0.46\), measured).
+    The third: teammates on the same NBA team share a schedule, so their games played rise and fall together (\(\rho_{tm} = 0.25\),
+    measured at 0.245).</p>
+  </div>
+  <p>Each simulation plays out every remaining week, seeds the top 8 by category record into the playoff bracket, and plays the three
+  playoff rounds using each roster's real games in those weeks. Repeating this thousands of times gives each team's chance of each
+  finish, and expected winnings:</p>
+  <div class="eq">
+    <div>\[ \text{expected winnings} = \$150\cdot P(\text{1st}) + \$90\cdot P(\text{2nd}) + \$60\cdot P(\text{3rd}) \]</div>
+  </div>
+  <p class="evidence"><b>Evidence</b>The widening factor used for future weeks (\(\kappa = 1.18\)) lowered weekly prediction error on an
+  unseen season (0.2106 → 0.2095), and teams given 75–90% then won about as often as predicted. Season-long results will be scored at
+  the end of 2026-27.</p>
+
+  <h2>5. Overall contribution of each component</h2>
+  <p>Figure 7 collects the evidence above. Each bar compares the model with and without one component, on that component's own error
+  measure, so bars show how much each part helps but are not directly comparable to each other.</p>
   <figure class="fig">
-    <div class="plot" id="fig-forest" style="height:260px"></div>
-    <div class="key" id="key-forest"></div>
-    <figcaption><b>Figure 7. Change in matchup prediction error</b> (negative is better), with 95% ranges. The opponent adjustment and
-    the teammates-out adjustment both help on both seasons, and so does the two together, which is what now runs. "Same game and
-    league-wide shocks" made no difference at all, so it was rejected.</figcaption>
-    <details><summary>Show data</summary><div class="scroll"><table id="tab-forest"></table></div></details>
+    <div class="plot" id="fig-kept" style="height:300px"></div>
+    <figcaption><b>Figure 7. Reduction in error from each component</b>, on data not used to build it. Hover for the values before and
+    after.</figcaption>
+    <details><summary>Show data</summary><div class="scroll"><table id="tab-kept"></table></div></details>
   </figure>
 
-  <h2>5. What was tried and not kept</h2>
+  <h2>6. What the model leaves out, and why</h2>
+  <p>Several plausible effects were tested and are not in the model, either because they made predictions worse or because the data
+  showed no effect.</p>
   <div class="scroll"><table>
-    <tr><th>Idea</th><th style="text-align:left">Outcome</th></tr>
-    <tr><td>Drafting only to maximise title chance</td><td style="text-align:left;white-space:normal"><span class="tag no">Rejected</span>did worse on real past seasons</td></tr>
-    <tr><td>Wider ranges for surprise seasons</td><td style="text-align:left;white-space:normal"><span class="tag no">Rejected</span>typical ranges got less accurate; extremes barely improved</td></tr>
-    <tr><td>Correcting games-played projections</td><td style="text-align:left;white-space:normal"><span class="tag no">Rejected</span>over-corrected; overall error rose (0.0521 → 0.0527)</td></tr>
-    <tr><td>Re-estimating the market weight for each season</td><td style="text-align:left;white-space:normal"><span class="tag no">Rejected</span>pooled error worse (6.99 → 7.43)</td></tr>
-    <tr><td>Outside projection system (DARKO)</td><td style="text-align:left;white-space:normal"><span class="tag no">Rejected</span>better single stats, worse overall value in 2 of 3 seasons; re-test at season end</td></tr>
-    <tr><td>Separating ESPN's points ranking from its category ranking</td><td style="text-align:left;white-space:normal"><span class="tag no">Rejected</span>failed when tested forward in time</td></tr>
-    <tr><td>Re-fitting season weights and an age curve</td><td style="text-align:left;white-space:normal"><span class="tag no">Rejected</span>no gain over the standard weights</td></tr>
-    <tr><td>Players in the same game; league-wide nights</td><td style="text-align:left;white-space:normal"><span class="tag no">Rejected</span>zero effect on matchup chances (Figure 7)</td></tr>
-    <tr><td>Earlier weekly engines (L1, L2, L2b)</td><td style="text-align:left;white-space:normal"><span class="tag no">Rejected</span>too cautious at 10–30%, or a design error</td></tr>
-    <tr><td>Learning other managers' draft habits</td><td style="text-align:left;white-space:normal"><span class="tag no">Not built</span>under 0.5 points of title chance</td></tr>
-    <tr><td>Simulating every day of the season</td><td style="text-align:left;white-space:normal"><span class="tag no">Not built</span>the 10-starter limit costs only 0.36% of games</td></tr>
-    <tr><td>Built-in assumptions (injury replacement, learning speed, teammates' games, games per week)</td><td style="text-align:left;white-space:normal"><span class="tag same">Confirmed</span>measured values matched the assumed ones</td></tr>
-    <tr><td>Teammates taking each other's stats</td><td style="text-align:left;white-space:normal"><span class="tag same">Confirmed</span>no effect once games played are accounted for</td></tr>
+    <tr><th>Effect</th><th class="l">Finding</th></tr>
+    <tr><td>Players in the same game, and nights when the whole league runs hot or cold</td><td class="l"><span class="tag no">Excluded</span>Players facing each other do move together slightly (about 0.03 for points), but it made no difference to matchup chances.</td></tr>
+    <tr><td>Teammates taking each other's stats</td><td class="l"><span class="tag same">No effect</span>Once games played are accounted for, teammates' stats don't rise and fall together; only their games played do, which §4.6 includes.</td></tr>
+    <tr><td>Letting the market weight be re-estimated for each season separately</td><td class="l"><span class="tag no">Excluded</span>Less accurate overall than drawing it from a range estimated across seasons.</td></tr>
+    <tr><td>An outside projection system (DARKO) as an extra input</td><td class="l"><span class="tag no">Excluded</span>More accurate for single stats, less accurate for overall player value in 2 of 3 seasons.</td></tr>
+    <tr><td>Separating ESPN's points-league ranking from its category ranking</td><td class="l"><span class="tag no">Excluded</span>Failed when tested forward in time (earlier seasons predicting later ones).</td></tr>
+    <tr><td>Fitted weights for past seasons and an age curve</td><td class="l"><span class="tag no">Excluded</span>No improvement over standard weights.</td></tr>
+    <tr><td>Wider ranges for surprise seasons</td><td class="l"><span class="tag no">Excluded</span>Made typical ranges less accurate while barely helping extreme ones.</td></tr>
+    <tr><td>Correcting games-played projections toward the average</td><td class="l"><span class="tag no">Excluded</span>Over-corrected; overall error rose.</td></tr>
+    <tr><td>Modelling other managers' draft habits</td><td class="l"><span class="tag same">No effect</span>Changed title chances by less than half a percentage point.</td></tr>
+    <tr><td>Simulating every single day of the season</td><td class="l"><span class="tag same">No effect</span>The weekly engine already matches real weeks; the daily starting limit is handled directly (§4.3).</td></tr>
+    <tr><td>Assumed settings (injury replacement, learning speed, games per week)</td><td class="l"><span class="tag same">Confirmed</span>Values measured from real data were close enough to the assumed ones that no prediction changed.</td></tr>
   </table></div>
 
-  <h2>6. Limitations</h2>
+  <h2>7. Limitations</h2>
   <ul>
-    <li>The model's 95% ranges for player value contain the real result about 92% of the time, so big surprises happen a little more
-    often than it expects. The one fix tried made things worse.</li>
-    <li>"Day-to-day" injury tags are ignored for now; there is no past data on them yet (§7).</li>
-    <li>The opponent adjustment only applies to the current week, not to future weeks of the season simulation.</li>
-    <li>The value of draft-market information changes from season to season, and one season can't be predicted in advance.</li>
+    <li><b>Surprises are slightly under-predicted.</b> The model's 95% ranges for player value contain the real result about 92% of the
+    time, so very large surprises happen a little more often than it expects.</li>
+    <li><b>"Day-to-day" injury tags are not used.</b> Past data on these tags isn't available, so their effect can't be estimated yet.</li>
+    <li><b>Game context covers the current week only.</b> Future weeks in the season simulation don't yet account for opponents.</li>
+    <li><b>The market's usefulness varies by season.</b> The model allows for this but cannot know in advance which kind of season this one is.</li>
   </ul>
 
-  <h2>7. Next tests</h2>
+  <h2>8. Open questions</h2>
   <ol>
-    <li><b>Day-to-day tags.</b> Every player's ESPN status has been logged since Oct 22. The test runs once about 300 games by
-    day-to-day players are recorded (mid-November).</li>
-    <li><b>Early-season expectations.</b> In week 1, players across the league came in about 15% below expectations, mostly from
-    fewer minutes. Past seasons will show whether this happens every year.</li>
-    <li><b>Opponents in future weeks</b>, especially the March playoff weeks.</li>
-    <li><b>Back-to-backs:</b> whether stars sitting the second night should lower their chance of playing.</li>
-    <li><b>Real lineups</b> instead of assuming every manager starts their best players.</li>
-    <li><b>End of season:</b> every weekly prediction from 2026-27 gets scored against what happened.</li>
+    <li><b>Day-to-day tags.</b> Every player's ESPN status is being recorded; once about 300 games by day-to-day players exist, their
+    chance of playing will be estimated and tested.</li>
+    <li><b>Early-season minutes.</b> Do players play fewer minutes than projected in the first weeks of every season? If so, real stats
+    should take over sooner.</li>
+    <li><b>Opponents in future weeks</b>, including the playoff weeks.</li>
+    <li><b>Back-to-back games:</b> whether a star's chance of playing drops on the second night.</li>
+    <li><b>Real lineups:</b> using the lineups managers actually set rather than assuming each manager starts their best players.</li>
+    <li><b>Full-season check:</b> scoring every weekly prediction of 2026-27 against what happened.</li>
   </ol>
 
   <p class="back"><a href="./">← Back to the league page</a></p>
@@ -323,7 +365,6 @@ function el(tag, attrs = {}, parent) {
   return e;
 }
 function hover(node, html) {
-  node.style.cursor = "default";
   node.addEventListener("mousemove", ev => { tip.hidden = false; tip.innerHTML = html;
     tip.style.left = Math.min(ev.clientX + 12, innerWidth - 270) + "px"; tip.style.top = (ev.clientY + 12) + "px"; });
   node.addEventListener("mouseleave", () => { tip.hidden = true; });
@@ -361,8 +402,7 @@ function lineChart(svg, W, H, series, o) {
       "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
     for (const [a, b] of s.pts) {
       if (s.dots) el("circle", { cx: x(a), cy: y(b), r: 4, fill: v(s.c), stroke: v("--surface"), "stroke-width": 2 }, svg);
-      const hit = el("circle", { cx: x(a), cy: y(b), r: 12, fill: "transparent" }, svg);
-      hover(hit, `${s.name ? s.name + "<br>" : ""}${o.xn} ${a}: <b>${o.tf(b)}</b>`);
+      hover(el("circle", { cx: x(a), cy: y(b), r: 12, fill: "transparent" }, svg), `${s.name ? s.name + "<br>" : ""}${o.xn} ${a}: <b>${o.tf(b)}</b>`);
     }
     if (s.label) {
       const [a, b] = s.pts[s.pts.length - 1];
@@ -370,8 +410,19 @@ function lineChart(svg, W, H, series, o) {
     }
   }
 }
+function hbars(svg, W, H, rows, o) {
+  const narrow = W < 560, L = narrow ? 8 : o.L, R = 54, row = H / rows.length, x = t => L + t / o.max * (W - L - R);
+  rows.forEach(([name, val, det], i) => {
+    const yc = row * i + row / 2, bh = narrow ? 12 : 16, by = narrow ? yc + 2 : yc - bh / 2;
+    el("text", { x: narrow ? 8 : L - 10, y: narrow ? yc - 6 : yc + 4, "text-anchor": narrow ? "start" : "end" }, svg).textContent = name;
+    const w = Math.max(x(val) - x(0), 3);
+    el("path", { d: `M${x(0)},${by} h${w - 3} a3,3 0 0 1 3,3 v${bh - 6} a3,3 0 0 1 -3,3 h${-(w - 3)} z`, fill: v("--s1") }, svg);
+    el("text", { x: x(0) + w + 6, y: by + bh - 3, class: "val" }, svg).textContent = o.fmt(val);
+    hover(el("rect", { x: 0, y: row * i, width: W, height: row, fill: "transparent" }, svg), `<b>${name}</b><br>${det}`);
+  });
+}
 
-// Figure 1: absence survival
+// Figure 2: absence survival
 const S = [1.0, 1.0, 0.481, 0.336, 0.259, 0.218, 0.188, 0.165, 0.145, 0.128, 0.114, 0.105, 0.097, 0.091, 0.083, 0.079, 0.076,
   0.073, 0.07, 0.066, 0.062, 0.058, 0.057, 0.054, 0.051, 0.049, 0.048, 0.048, 0.043, 0.042, 0.041];
 chart("fig-surv", (svg, W, H) => lineChart(svg, W, H, [{ c: "--s1", dots: true, pts: S.slice(1).map((s, i) => [i + 1, s]) }],
@@ -379,97 +430,28 @@ chart("fig-surv", (svg, W, H) => lineChart(svg, W, H, [{ c: "--s1", dots: true, 
     yt: [0, .25, .5, .75, 1], yf: t => Math.round(t * 100) + "%", tf: t => (t * 100).toFixed(1) + "% of absences" }));
 table("tab-surv", ["Games missed (at least)", "Share of absences"], S.slice(1, 16).map((s, i) => [i + 1, (s * 100).toFixed(1) + "%"]));
 
-// Figure 2: shrinkage weight
+// Figure 3: availability
+chart("fig-avail", (svg, W, H) => hbars(svg, W, H, [
+  ["Preseason estimate only", 0.148, "squared error 0.148"],
+  ["+ games played this season", 0.098, "squared error 0.098"],
+  ["+ absence lengths (the model)", 0.074, "squared error 0.074"]], { L: 210, max: 0.16, fmt: t => t.toFixed(3) }));
+
+// Figure 4: opponent weight
 const wpts = K => Array.from({ length: 83 }, (_, n) => [n, n / (n + K)]);
 chart("fig-weight", (svg, W, H) => lineChart(svg, W, H, [
-  { c: "--s1", name: "K = 20 (assists, steals, turnovers)", pts: wpts(20), label: "K = 20", ly: -8 },
-  { c: "--s2", name: "K = 40 (other stats)", pts: wpts(40), label: "K = 40", ly: 16 }],
+  { c: "--s1", name: "K = 20", pts: wpts(20), label: "K = 20", ly: -8 },
+  { c: "--s2", name: "K = 40", pts: wpts(40), label: "K = 40", ly: 16 }],
   { x0: 0, x1: 82, xt: [0, 20, 40, 60, 82], xl: "opponent's games played (n)", xn: "after", y0: 0, y1: 1,
     yt: [0, .25, .5, .75, 1], yf: t => Math.round(t * 100) + "%", tf: t => (t * 100).toFixed(0) + "% weight" }));
 key("key-weight", [["--s1", "K = 20: assists, steals, turnovers"], ["--s2", "K = 40: points, rebounds, blocks, threes, shooting"]]);
 
-// Figure 3: kept changes (horizontal bars from zero)
-const KEPT = [
-  ["Real stats blended into rates", 37, "rest-of-season points error 695k → 436k"],
-  ["Absence-length curve (injured players)", 50, "squared error 0.148 → 0.074"],
-  ["Draft-market information", 25, "player value error 7.02 → 5.29"],
-  ["Belief layer V2 → V4", 7, "projection error 1.564 → 1.457"],
-  ["Weekly engine L3", 5.4, "matchup error 0.130 → 0.123 (two seasons)"],
-  ["Market adjustment only for drafted players", 4.4, "pooled error 6.99 → 6.68"],
-  ["Less overconfident weekly odds", 0.5, "matchup error 0.2106 → 0.2095"],
-  ["Opponent + teammates out (new)", 0.3, "matchup error −0.2% to −0.4%"]];
-chart("fig-kept", (svg, W, H) => {
-  const narrow = W < 520, L = narrow ? 8 : 250, R = 46, T = 4, row = (H - T) / KEPT.length;
-  const x = t => L + t / 55 * (W - L - R);
-  for (const t of [0, 25, 50]) el("line", { x1: x(t), x2: x(t), y1: T, y2: H, stroke: v("--grid") }, svg);
-  KEPT.forEach(([name, val, det], i) => {
-    const yc = T + row * i + row / 2, bh = narrow ? 12 : 16, by = narrow ? yc + 2 : yc - bh / 2;
-    el("text", { x: narrow ? 8 : L - 10, y: narrow ? yc - 6 : yc + 4, "text-anchor": narrow ? "start" : "end" }, svg).textContent = name;
-    const w = Math.max(x(val) - x(0), 2);
-    el("path", { d: `M${x(0)},${by} h${w - 4} a4,4 0 0 1 4,4 v${bh - 8} a4,4 0 0 1 -4,4 h${-(w - 4)} z`, fill: v("--s1") }, svg);
-    el("text", { x: x(0) + w + 6, y: by + bh - 3, class: "val" }, svg).textContent = (val < 1 ? val.toFixed(1) : Math.round(val)) + "%";
-    const hit = el("rect", { x: 0, y: T + row * i, width: W, height: row, fill: "transparent" }, svg);
-    hover(hit, `<b>${name}</b><br>${val}% less error<br>${det}`);
-  });
-});
-table("tab-kept", ["Change", "Less error", "Before → after"], KEPT.map(([a, b, c]) => [a, b + "%", c]));
-
-// Figure 4: belief layer versions (dot plot, axis not from zero)
-const BEL = [["V0", 1.5635], ["V1", 1.5108], ["V2", 1.5091], ["V3", 1.4742], ["V4", 1.4570]];
-chart("fig-belief", (svg, W, H) => {
-  const L = 46, R = 14, T = 10, B = 26, x = i => L + (i + .5) / BEL.length * (W - L - R);
-  const y = t => T + (1 - (t - 1.44) / (1.58 - 1.44)) * (H - T - B);
-  axisY(svg, y, [1.45, 1.5, 1.55], L, W - R, t => t.toFixed(2));
-  BEL.forEach(([n, val], i) => {
-    el("circle", { cx: x(i), cy: y(val), r: 6, fill: v("--s1"), stroke: v("--surface"), "stroke-width": 2 }, svg);
-    el("text", { x: x(i), y: y(val) - 12, "text-anchor": "middle", class: "val" }, svg).textContent = val.toFixed(3);
-    el("text", { x: x(i), y: H - 6, "text-anchor": "middle" }, svg).textContent = n + (n === "V4" ? " (now)" : "");
-    hover(el("circle", { cx: x(i), cy: y(val), r: 16, fill: "transparent" }, svg), `${n}: projection error <b>${val}</b>`);
-  });
-});
-
-// Figure 5: availability (bars from zero)
-const AV = [["V0 preseason only", 0.148], ["V1 + games played", 0.098], ["V2 + absence curve (now)", 0.074]];
-chart("fig-avail", (svg, W, H) => {
-  const narrow = W < 520, L = narrow ? 8 : 190, R = 50, row = H / AV.length, x = t => L + t / 0.16 * (W - L - R);
-  AV.forEach(([n, val], i) => {
-    const yc = row * i + row / 2, bh = narrow ? 12 : 18, by = narrow ? yc + 2 : yc - bh / 2;
-    el("text", { x: narrow ? 8 : L - 10, y: narrow ? yc - 6 : yc + 4, "text-anchor": narrow ? "start" : "end" }, svg).textContent = n;
-    const w = x(val) - x(0);
-    el("path", { d: `M${x(0)},${by} h${w - 4} a4,4 0 0 1 4,4 v${bh - 8} a4,4 0 0 1 -4,4 h${-(w - 4)} z`, fill: v("--s1") }, svg);
-    el("text", { x: x(val) + 6, y: by + bh - 3, class: "val" }, svg).textContent = val.toFixed(3);
-    hover(el("rect", { x: 0, y: row * i, width: W, height: row, fill: "transparent" }, svg), `${n}: squared error <b>${val}</b>`);
-  });
-});
-
-// Figure 6: error by day, two seasons (small multiples)
-const DAYS = { "2025-26": { L1b: [.181, .162, .141, .122, .098, .077], L3: [.166, .149, .133, .118, .095, .075] },
-               "2023-24": { L1b: [.185, .167, .140, .126, .096, .068], L3: [.172, .157, .134, .121, .094, .067] } };
-chart("fig-days", (svg, W, H) => {
-  const seasons = Object.keys(DAYS), gap = 18, pw = (W - gap) / 2;
-  seasons.forEach((s, k) => {
-    const g = el("g", { transform: `translate(${k * (pw + gap)},0)` }, svg);
-    el("text", { x: 46, y: 12, class: "val" }, g).textContent = s;
-    const inner = el("g", { transform: "translate(0,14)" }, g);
-    lineChart(inner, pw, H - 14, [
-      { c: "--s2", name: "Old engine (L1b)", dots: true, pts: DAYS[s].L1b.map((e, i) => [i + 1, e]) },
-      { c: "--s1", name: "Current engine (L3)", dots: true, pts: DAYS[s].L3.map((e, i) => [i + 1, e]) }],
-      { x0: 1, x1: 6, xt: [1, 2, 3, 4, 5, 6], xl: "day of the week", xn: "day", y0: .06, y1: .19,
-        yt: [.08, .12, .16], yf: t => t.toFixed(2), tf: t => t.toFixed(3) });
-  });
-});
-key("key-days", [["--s2", "Old engine (L1b)"], ["--s1", "Current engine (L3)"]]);
-table("tab-days", ["Season · engine", "Day 1", "2", "3", "4", "5", "6"],
-  Object.entries(DAYS).flatMap(([s, d]) => Object.entries(d).map(([m, e]) => [`${s} · ${m}`, ...e.map(t => t.toFixed(3))])));
-
-// Figure 7: forest plot of the game-context tests
+// Figure 5: game context
 const FOREST = [
   ["Opponent and pace", [-0.00046, -0.00068, -0.00025], [-0.00020, -0.00038, -0.00003]],
   ["Teammates out", [-0.00007, -0.00011, -0.00003], [-0.00006, -0.00010, -0.00001]],
-  ["Both together (now running)", [-0.00052, -0.00075, -0.00030], [-0.00027, -0.00045, -0.00008]],
-  ["Same game and league-wide shocks", [0, 0, 0], [0, 0, 0]]];
+  ["Both (the model)", [-0.00052, -0.00075, -0.00030], [-0.00027, -0.00045, -0.00008]]];
 chart("fig-forest", (svg, W, H) => {
-  const narrow = W < 560, L = narrow ? 8 : 230, R = 16, T = 6, B = 30, row = (H - T - B) / FOREST.length;
+  const narrow = W < 560, L = narrow ? 8 : 180, R = 16, T = 6, B = 38, row = (H - T - B) / FOREST.length;
   const x = t => L + (t + 0.0008) / 0.0010 * (W - L - R);
   for (const t of [-0.0008, -0.0006, -0.0004, -0.0002, 0, 0.0002]) {
     el("line", { x1: x(t), x2: x(t), y1: T, y2: H - B, stroke: t === 0 ? v("--muted") : v("--grid"), "stroke-dasharray": t === 0 ? "4 3" : "" }, svg);
@@ -489,17 +471,45 @@ chart("fig-forest", (svg, W, H) => {
   });
 });
 key("key-forest", [["--s1", "2025-26 test season"], ["--s2", "2023-24 test season"]]);
-table("tab-forest", ["Idea", "2025-26 change (95% range)", "2023-24 change (95% range)"],
+table("tab-forest", ["Adjustment", "2025-26 (95% range)", "2023-24 (95% range)"],
   FOREST.map(([n, a, b]) => [n, ...[a, b].map(d => `${d[0].toFixed(5)} (${d[1].toFixed(5)} to ${d[2].toFixed(5)})`)]));
 
-document.addEventListener("DOMContentLoaded", () => {
-  if (window.renderMathInElement) renderMathInElement(document.body, { delimiters: [{ left: "\\[", right: "\\]", display: true },
-    { left: "\\(", right: "\\)", display: false }], throwOnError: false });
+// Figure 6: weekly engine by day (small multiples)
+const DAYS = { "2025-26": { simple: [.181, .162, .141, .122, .098, .077], full: [.166, .149, .133, .118, .095, .075] },
+               "2023-24": { simple: [.185, .167, .140, .126, .096, .068], full: [.172, .157, .134, .121, .094, .067] } };
+chart("fig-days", (svg, W, H) => {
+  const gap = 18, pw = (W - gap) / 2;
+  Object.keys(DAYS).forEach((s, k) => {
+    const g = el("g", { transform: `translate(${k * (pw + gap)},0)` }, svg);
+    el("text", { x: 46, y: 12, class: "val" }, g).textContent = s;
+    const inner = el("g", { transform: "translate(0,14)" }, g);
+    lineChart(inner, pw, H - 14, [
+      { c: "--s2", name: "Simpler engine", dots: true, pts: DAYS[s].simple.map((e, i) => [i + 1, e]) },
+      { c: "--s1", name: "Full engine (the model)", dots: true, pts: DAYS[s].full.map((e, i) => [i + 1, e]) }],
+      { x0: 1, x1: 6, xt: [1, 2, 3, 4, 5, 6], xl: "day of the week", xn: "day", y0: .06, y1: .19,
+        yt: [.08, .12, .16], yf: t => t.toFixed(2), tf: t => t.toFixed(3) });
+  });
 });
-window.addEventListener("load", () => {
-  if (window.renderMathInElement && !document.querySelector(".katex")) renderMathInElement(document.body, {
-    delimiters: [{ left: "\\[", right: "\\]", display: true }, { left: "\\(", right: "\\)", display: false }], throwOnError: false });
-});
+key("key-days", [["--s2", "Simpler engine"], ["--s1", "Full engine (the model)"]]);
+table("tab-days", ["Season · engine", "Day 1", "2", "3", "4", "5", "6"],
+  Object.entries(DAYS).flatMap(([s, d]) => Object.entries(d).map(([m, e]) => [`${s} · ${m}`, ...e.map(t => t.toFixed(3))])));
+
+// Figure 7: contribution of each component
+const KEPT = [
+  ["Availability (players currently out)", 50, "squared error 0.148 → 0.074"],
+  ["In-season updating", 37, "rest-of-season points error 37% lower than projection alone"],
+  ["Draft-market information (player value)", 25, "player value error 7.02 → 5.29"],
+  ["Market information (projection error)", 7, "CRPS 1.564 → 1.457"],
+  ["Weekly matchup engine", 5.4, "matchup error 0.130 → 0.123"],
+  ["Widening future-week chances", 0.5, "weekly error 0.2106 → 0.2095"],
+  ["Game context", 0.3, "matchup error 0.2–0.4% lower"]];
+chart("fig-kept", (svg, W, H) => hbars(svg, W, H, KEPT, { L: 270, max: 55, fmt: t => (t < 1 ? t.toFixed(1) : Math.round(t)) + "%" }));
+table("tab-kept", ["Component", "Less error", "Details"], KEPT.map(([a, b, c]) => [a, b + "%", c]));
+
+const renderMath = () => window.renderMathInElement && renderMathInElement(document.body, {
+  delimiters: [{ left: "\\[", right: "\\]", display: true }, { left: "\\(", right: "\\)", display: false }], throwOnError: false });
+document.addEventListener("DOMContentLoaded", renderMath);
+window.addEventListener("load", () => { if (!document.querySelector(".katex")) renderMath(); });
 </script>
 </body>
 </html>
