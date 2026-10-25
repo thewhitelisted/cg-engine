@@ -584,7 +584,7 @@ PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<meta http-equiv="refresh" content="300">
+<meta http-equiv="refresh" content="1800">
 <title>The Cool Guys · League page</title>
 <style>
 :root { --bg: #f6f6f2; --card: #fcfcfb; --ink: #15171a; --ink2: #4d5056; --muted: #84878c; --rule: #e1e0d9;
@@ -687,7 +687,7 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
 @media (max-width: 560px) { td:first-child { white-space: normal; min-width: 116px; } }
 </style>
 </head>
-<body>
+<body data-updated="%(updated)s">
 <div class="wrap">
   <div><h1>The Cool Guys · Matchup %(period)s</h1>
   <div class="sub">%(dates)s · updated %(updated)s</div>%(headline)s</div>
@@ -696,7 +696,7 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
   <p class="note">Win chance: each team's chance to win at least 5 of the 9 categories by Sunday, from what's happened so
   far plus a projection of every remaining game. The strip under each bar is that chance through the week (blue share
   at the bottom, one column per day). Toss-ups: categories where either side has at least a 30% chance to win.
-  Games: player-games already played this week · scheduled games left. Updated about every 6 minutes during games.</p>
+  Games: player-games already played this week · scheduled games left. Updated every few minutes during games; the page refreshes itself.</p>
   %(today)s
   %(awards)s
   %(standings)s
@@ -715,7 +715,9 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
   <footer class="foot"><a class="btn" href="insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
 </div>
 <script>
-(() => {
+const CG = {};
+function initNav() {
+  if (CG.io) CG.io.disconnect();
   const nav = document.querySelector("nav.jump");
   if (!nav || !("IntersectionObserver" in window)) return;
   const links = [...nav.querySelectorAll("a")];
@@ -734,19 +736,22 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
     const first = atEnd ? ids[ids.length - 1] : ids.find(id => seen.get(id));
     if (first) mark(first);
   };
-  const io = new IntersectionObserver(es => {
+  const io = CG.io = new IntersectionObserver(es => {
     es.forEach(e => seen.set(e.target.id, e.isIntersecting));
     update();
   }, { rootMargin: "-64px 0px -55% 0px" });
   byId.forEach((_, id) => { const el = document.getElementById(id); if (el) io.observe(el); });
-  addEventListener("scroll", () => { if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) update(); }, { passive: true });
+  CG.onScroll && removeEventListener("scroll", CG.onScroll);
+  CG.onScroll = () => { if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) update(); };
+  addEventListener("scroll", CG.onScroll, { passive: true });
   links.forEach(a => a.addEventListener("click", () => { mark(a.getAttribute("href").slice(1)); hold = Date.now() + 900; }));
-})();
+}
 (() => {
   const NS = "http://www.w3.org/2000/svg";
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const tip = Object.assign(document.createElement("div"), { className: "ttip", hidden: true });
   document.body.appendChild(tip);
+  CG.hideTip = () => { tip.hidden = true; };
   const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag);
     for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; };
   const day = d => new Date(d + "T00:00:00");
@@ -820,14 +825,45 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
       el("circle", { cx: x(t), cy: y(f(p)), r: 2.5, fill: css(c) }, svg);
     });
   }
-  document.querySelectorAll(".trend .mini").forEach(mini);
-  document.querySelectorAll("details.trend").forEach(d => d.addEventListener("toggle", () => {
-    if (d.open) draw(d.querySelector(".tplot")); else tip.hidden = true;
-  }));
+  CG.initCharts = () => {
+    document.querySelectorAll(".trend .mini").forEach(mini);
+    document.querySelectorAll("details.trend").forEach(d => {
+      d.addEventListener("toggle", () => { if (d.open) draw(d.querySelector(".tplot")); else tip.hidden = true; });
+      if (d.open) draw(d.querySelector(".tplot"));
+    });
+  };
   let w = innerWidth;
   addEventListener("resize", () => { if (innerWidth === w) return; w = innerWidth;
     document.querySelectorAll("details.trend[open] .tplot").forEach(draw);
     document.querySelectorAll("details.trend:not([open]) .mini").forEach(mini); });
+})();
+initNav();
+CG.initCharts();
+(() => {                                   // live refresh: new numbers without reloading the page
+  let current = document.body.dataset.updated;
+  async function check() {
+    if (document.hidden) return;
+    try {
+      const d = await (await fetch("data.json?t=" + Date.now(), { cache: "no-store" })).json();
+      if (!d.updated || d.updated === current) return;
+      const page = await (await fetch("index.html?t=" + Date.now(), { cache: "no-store" })).text();
+      const doc = new DOMParser().parseFromString(page, "text/html");
+      const fresh = doc.querySelector(".wrap");
+      if (!fresh) return;
+      const open = [...document.querySelectorAll("details.trend[open]")].map(x => x.dataset.key);
+      const y = scrollY;
+      CG.hideTip && CG.hideTip();
+      document.querySelector(".wrap").replaceWith(fresh);
+      open.forEach(k => { const el = document.querySelector(`details.trend[data-key="${CSS.escape(k)}"]`); if (el) el.open = true; });
+      current = doc.body.dataset.updated || d.updated;
+      document.body.dataset.updated = current;
+      initNav();
+      CG.initCharts();
+      scrollTo(0, y);
+    } catch (e) { /* offline or mid-deploy: try again next minute */ }
+  }
+  setInterval(check, 60000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
 })();
 </script>
 </body>
@@ -835,13 +871,13 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
 """
 
 
-def trend_block(trend, start, end, ha, aa):
+def trend_block(trend, start, end, ha, aa, key=""):
     """Collapsible odds-history chart (drawn in the browser): both teams' chances through the week, hover for values."""
     if not trend:
         return ""
     data = html.escape(json.dumps([[ts, round(p, 4)] for ts, p in trend]))
     attrs = f'data-trend="{data}" data-start="{start}" data-end="{end}" data-ha="{ha}" data-aa="{aa}"'
-    return (f'<details class="trend"><summary aria-label="Odds history chart">'
+    return (f'<details class="trend" data-key="{html.escape(key)}"><summary aria-label="Odds history chart">'
             f'<div class="mini" {attrs} aria-hidden="true"></div>'
             f'<span class="pill"><span class="closed">Expand chart</span><span class="open">Collapse</span>'
             f'<span class="chev">&#8964;</span></span></summary>'
@@ -880,7 +916,7 @@ def card(gm, start, end):
             f'</div>'
             f'<div class="bar" title="{ha} {ph:.1%} · {aa} {1 - ph:.1%}"><i style="width:{100 * ph:.1f}%"></i><i style="width:{100 * (1 - ph):.1f}%"></i></div>'
             f'<div class="caption">{" · ".join(bits)}</div>'
-            f'{trend_block(gm.get("trend") or [], start, end, ha, aa)}'
+            f'{trend_block(gm.get("trend") or [], start, end, ha, aa, gm.get("key", ""))}'
             f'<div class="scroll"><table class="cats"><tr><th></th>{head}</tr>'
             f'<tr><td><span class="dot da"></span>{ha}</td>{rh}</tr>'
             f'<tr><td><span class="dot db"></span>{aa}</td>{ra}</tr></table></div>'

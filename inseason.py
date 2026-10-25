@@ -30,11 +30,33 @@ def load_league(path=LEAGUE_FILE):
 _GAMELOGS = None
 
 
+def disk_cached(name, ttl_s, fetch_fn):
+    """fetch_fn() result cached on disk for ttl_s seconds (shared by the separate publish processes of one cloud run,
+    so frequent publishing doesn't re-download ESPN's large player feeds every time)."""
+    import pickle
+    import time
+    f = M.DATA / f".cache_{name}.pkl"
+    if f.exists() and time.time() - f.stat().st_mtime < ttl_s:
+        try:
+            return pickle.loads(f.read_bytes())
+        except Exception:
+            pass
+    out = fetch_fn()
+    try:
+        f.write_bytes(pickle.dumps(out))
+    except Exception:
+        pass
+    return out
+
+
+GAMELOG_TTL, STATUS_TTL = 1800, 600
+
+
 def gamelogs():
-    """Season-to-date game logs, fetched once per run (ESPN can be slow)."""
+    """Season-to-date game logs (completed days only), fetched at most every 30 minutes (ESPN can be slow)."""
     global _GAMELOGS
     if _GAMELOGS is None:
-        _GAMELOGS = _fetch_gamelogs()
+        _GAMELOGS = disk_cached("gamelogs", GAMELOG_TTL, _fetch_gamelogs)
     return _GAMELOGS
 
 
@@ -140,11 +162,13 @@ def all_statuses():
     """ESPN injury status for every player (public player feed), fetched once per run."""
     global _STATUSES
     if _STATUSES is None:
-        try:
-            pl = fetch.flatten(fetch.fetch_players(M.LIVE_SEASON, limit=700), M.LIVE_SEASON)
-            _STATUSES = {int(i): str(s) for i, s in zip(pl["id"], pl["injury"].fillna(""))}
-        except Exception:
-            _STATUSES = {}
+        def fetch_all():
+            try:
+                pl = fetch.flatten(fetch.fetch_players(M.LIVE_SEASON, limit=700), M.LIVE_SEASON)
+                return {int(i): str(s) for i, s in zip(pl["id"], pl["injury"].fillna(""))}
+            except Exception:
+                return {}
+        _STATUSES = disk_cached("statuses", STATUS_TTL, fetch_all)
     return _STATUSES
 
 
