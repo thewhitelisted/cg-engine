@@ -5,3 +5,4 @@ data/*.out
 data/weekly/
 __pycache__/
 page/
+data/.cache_*

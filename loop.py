@@ -1,5 +1,5 @@
-"""Publish every 6.5 minutes while NBA games are on, inside one GitHub Actions job (about 9 an hour, under GitHub
-Pages' soft limit of 10 builds per hour).
+"""Publish every 2 minutes while NBA games are on, inside one GitHub Actions job. The site deploys through GitHub
+Actions (no hourly build cap) and the page refreshes itself in place.
 
 GitHub's scheduler starts runs late or drops them, so one run that lands in a game window stays alive and
 publishes on its own clock until the window closes or MAX_RUN is reached. GitHub stops jobs at 6 h, so at the
@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 
 import gate
 
-INTERVAL = timedelta(minutes=6.5)
+INTERVAL = timedelta(minutes=2)
 MAX_RUN = timedelta(hours=5, minutes=30)
 
 
