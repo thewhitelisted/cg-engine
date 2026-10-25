@@ -1,10 +1,8 @@
 name: Publish league odds
 
+# Manual fallback only. The server publishes around the clock (serve.py under systemd, server/cg-live.service); run
+# this only while that is down, or both will push. A run in a game window stays up and publishes every 2 min (loop.py).
 on:
-  schedule:
-    # Cron is UTC and can't follow daylight saving, so each line covers both EDT (UTC-4) and EST (UTC-5).
-    - cron: "8-23/15 13,14 * * *"         # :08 and :23 -> 9 AM ET morning refresh (gate.py skips the 10 AM ones)
-    - cron: "8-59/15 15-23,0-6 * * *"     # :08 :23 :38 :53, 11 AM-2:53 AM ET: a run in a game window stays up and publishes every 2 min (loop.py)
   workflow_dispatch:
     inputs:
       handoff:
@@ -13,7 +11,7 @@ on:
         default: "false"
 
 permissions:
-  contents: write                # weekly keep-alive commit (scheduled workflows stop after 60 idle days)
+  contents: write                # loop.py commits the status and lineup logs
   actions: write                 # gate.py reads the run list; loop.py starts its replacement at the time limit
 
 jobs:
@@ -68,13 +66,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python loop.py
-
-      - name: Weekly keep-alive
-        if: github.event_name == 'schedule'
-        run: |
-          if [ "$(date +%u)" = "1" ] && [ "$(date +%H)" = "09" ] && [ "$(date +%M)" -lt 30 ]; then
-            git config user.name "cg-engine"
-            git config user.email "cg-engine@users.noreply.github.com"
-            date -u +%FT%TZ > .keepalive
-            git add .keepalive && git commit -m "keep-alive" && git push
-          fi

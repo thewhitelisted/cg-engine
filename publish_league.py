@@ -61,13 +61,13 @@ def main():
     except Exception as e:
         log(f"transactions unavailable: {type(e).__name__}: {e}")
         tx = None
-    lv = LV.Live(live=live, today_frac=frac, lg=I.load_league())
+    lv = LV.Live(live=live, today_frac=frac, lg=I.load_league(), started=LV.started_teams(sb))
     try:
         history = json.loads(open(f"{repo}/history.json").read())
     except Exception:
         history = {}
     data = LP.build(lv, history, sb=sb, tx=tx)
-    key = json.dumps({k: v for k, v in data.items() if k != "updated"}, sort_keys=True, default=str)
+    key = LP.content_key(data)
     try:
         old = open(f"{repo}/.content_key").read()
     except Exception:

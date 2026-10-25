@@ -11,6 +11,9 @@ this season's box scores, shrunk by games played) and by the minutes of teammate
 kappa_c 1.041, psi 0.350 (fit 2024-25; validated on 2025-26 and 2023-24). MODEL = "L3" restores the previous engine.
 Remaining games: scheduled games after today, plus today's games that have no box score yet. Run after a
 night's games finish: an in-progress game is counted both in the live totals and as remaining.
+K1 lineup locks (DECISIONS.md, LINEUP_LOCKS): once a player's game has started today, his ESPN slot decides: benched
+counts 0 for the rest of today; active counts his unplayed share and holds that slot, so today's not-yet-started
+players are fitted into the remaining slots. Future days still assume the best lineup.
 """
 import json
 import sys
@@ -32,6 +35,9 @@ ABS_BETA = {"pts": 0.082, "reb": 0.044, "ast": 0.075, "stl": 0.025, "blk": -0.06
             "fga": 0.066, "fta": 0.084}      # per 240 absent teammate minutes
 CTX_STATS = ["pts", "reb", "ast", "stl", "blk", "tpm", "tov", "fga", "fta"]
 MC_CAP = 200
+LINEUP_LOCKS = True                # DECISIONS.md K1 (registered 2026-10-25, approved by the user the same day)
+SLOT_COLS = {0: (0,), 1: (1,), 2: (2,), 3: (3,), 4: (4,), 5: (5,), 6: (6,), 11: (7, 8, 9)}   # ESPN slot -> RL.SLOTS
+LOCKED_OUT = (12, 13)              # bench, IR
 MY_TEAM = 13
 LIVE_FILE = M.DATA / "live.json"
 
@@ -171,19 +177,31 @@ def cat_probs(mA, vA, mB, vB):
         M.set_kappa(prev)
 
 
+def started_teams(sb):
+    """NBA team ids whose game today has started (live_server.scoreboard's flag), or None without a scoreboard."""
+    if sb is None:
+        return None
+    return {t for t, v in sb.items() if len(v) > 4 and v[4]}
+
+
 class Live:
-    def __init__(self, live=None, today_frac=None, lg=None):
+    def __init__(self, live=None, today_frac=None, lg=None, started=None, slots=None, locks=None):
+        """started: NBA team ids whose game today has started (started_teams); slots: {player id: ESPN slot} newer
+        than lg's rosters (the live feed's); locks: K1 on/off (default LINEUP_LOCKS)."""
         M.set_kappa(LIVE_CONFIG["kappa"])
         self.lg = I.load_league() if lg is None else lg
         self.live = json.loads(LIVE_FILE.read_text()) if live is None else live
         self.g = I.gamelogs()
+        self.locks = LINEUP_LOCKS if locks is None else locks
         if today_frac is None:                     # read tonight's game clocks so finished games aren't re-counted
             try:
                 from datetime import datetime
                 import live_server
-                today_frac = {k: v[1] for k, v in live_server.scoreboard(datetime.now()).items()}
+                sb = live_server.scoreboard(datetime.now())
+                today_frac, started = {k: v[1] for k, v in sb.items()}, started_teams(sb)
             except Exception:
                 today_frac = None
+        self.started = started
         self.season = I.inseason_season(M.get_season(M.LIVE_SEASON, LIVE_CONFIG["proj"]), self.g)
         self.B = I.build(self.season, self.lg, self.g)
         self.period = self.live["period"]
@@ -194,16 +212,33 @@ class Live:
         self.n_tmr = remaining_games(self.season, self.g, self.period, from_tomorrow=True)
         self.slot = {t: s for s, t in enumerate(self.B["tids"])}
         self.today_frac = today_frac
+        self._set_slots({e[0]: e[2] for t in self.lg["teams"] for e in t["roster"]}, slots)
         if MODEL in ("L2", "L3", "L4"):
             self._l2_setup()
 
-    def update(self, live, today_frac=None):
-        """Cheap refresh: new live totals and game clocks, same players and model inputs."""
+    def update(self, live, today_frac=None, started=None, slots=None):
+        """Cheap refresh: new live totals, game clocks, started games and lineup slots; same players and model inputs."""
         self.live = live
         self.n_rem = remaining_games(self.season, self.g, self.period, today_frac=today_frac)
-        self.today_frac = today_frac
+        self.today_frac, self.started = today_frac, started
+        if slots:
+            self._set_slots(slots)
         if MODEL in ("L2", "L3", "L4"):
             self._l2_setup()
+
+    def _set_slots(self, *maps):
+        """ESPN lineup slot per model player (-1 = not rostered); later maps override earlier ones."""
+        idx = {int(i): k for k, i in enumerate(self.season.df["id"])}
+        self.slot_now = np.full(len(self.season.df), -1, int)
+        for m in maps:
+            for pid, sl in (m or {}).items():
+                if int(pid) in idx:
+                    self.slot_now[idx[int(pid)]] = int(sl)
+
+    def set_locks(self, on):
+        """Switch K1 on or off (replays, shadow odds); clears the cached expected starts."""
+        self.locks = bool(on)
+        self._cache, self._daily = {}, {}
 
     # ---------------- L2: near-term availability + daily lineup cap
     def _l2_setup(self):
@@ -217,6 +252,9 @@ class Live:
         self.m_now = np.asarray(self.B["info"]["m"])
         self.share = df["avail"].to_numpy()
         self._cache, self._daily = {}, {}
+        today = pd.Timestamp(date.today())          # K1: players whose game today has started
+        self.lock_day = today if self.started is not None and self.days and self.days[0][0] == today else None
+        self.lock_started = np.isin(df["pro_team_id"].to_numpy(), list(self.started or ()))
         if MODEL == "L4":
             self._context_setup()
 
@@ -272,7 +310,13 @@ class Live:
                 continue
             j[on] += 1
             p = near_term_p(self.share[r[on]], self.m_now[r[on]], j[on], self.p11, self.S)
-            if len(on) <= 10 and self.elig[r[on]].any(1).all():
+            fast = len(on) <= 10 and self.elig[r[on]].any(1).all()
+            st = self.lock_started[r] if self.locks and k == 0 and d == self.lock_day else None
+            if st is not None and st.any():
+                if not fast:                            # draw what L4 would, so later days see the same numbers
+                    rng.random((MC_CAP, len(on)))
+                es = self._locked_starts(r, on, p, st)
+            elif fast:
                 es = p
             else:
                 es = np.zeros(len(on))
@@ -290,6 +334,38 @@ class Live:
             daily.append((d, r[on], es * wr[on], es * (1 - es) * wr[on] ** 2))
         self._cache[key], self._daily[key] = (E, V), daily
         return E, V
+
+    def _locked_starts(self, r, on, p, st):
+        """K1, today: expected starts for `on` (indices into r with a game share left) given which of r's games have
+        started (st). Benched in a started game: 0. Active in a started game: plays if available, holding his slot
+        (finished games too). Not started: best fit into the slots nobody holds."""
+        from scipy.optimize import linear_sum_assignment
+        from research_lineup import SLOTS
+        slot = self.slot_now[r]
+        held = st & np.isin(slot, list(SLOT_COLS))
+        out = st & np.isin(slot, LOCKED_OUT)
+        cols = list(range(len(SLOTS)))
+        for s in slot[held]:
+            free = [c for c in SLOT_COLS[int(s)] if c in cols]
+            if free:
+                cols.remove(free[0])
+        es = np.where(held[on], p, 0.0)
+        pool = np.where(~held[on] & ~out[on])[0]     # not started (or no known slot)
+        if not len(pool) or not cols:
+            return es
+        el = self.elig[r[on[pool]]][:, cols]
+        if len(pool) <= len(cols) and el.any(1).all():
+            es[pool] = p[pool]
+            return es
+        acc = np.zeros(len(pool))
+        for dr in np.random.default_rng(12).random((MC_CAP, len(pool))) < p[pool]:
+            pl = np.where(dr)[0]
+            if not len(pl):
+                continue
+            a_, b_ = linear_sum_assignment(-(el[pl] * (10 + self.val[r[on[pool[pl]]]][:, None])))
+            acc[pl[a_][el[pl][a_, b_] > 0]] += 1
+        es[pool] = acc / MC_CAP
+        return es
 
     def games_left(self, tid, rosters=None):
         rost = self.B["rost"] if rosters is None else rosters

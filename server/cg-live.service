@@ -1,0 +1,16 @@
+[Unit]
+Description=Cool Guys live odds publisher (cg-engine serve.py)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=chris
+WorkingDirectory=/home/chris/prod/cg-engine
+ExecStart=/home/chris/.venvs/cg-engine/bin/python -u serve.py
+Environment=TZ=America/New_York
+Environment=PATH=/home/chris/.local/bin:/usr/local/bin:/usr/bin:/bin
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

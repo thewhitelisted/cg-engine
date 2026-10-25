@@ -6,3 +6,4 @@ data/weekly/
 __pycache__/
 page/
 data/.cache_*
+data/serve_state.json

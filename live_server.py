@@ -69,8 +69,13 @@ def transactions(sp_now, back=8):
     return out
 
 
-def scoreboard(day: datetime):
-    """NBA games today: {pro_team_id: (state, share of game left, short detail, score line)}."""
+NEVER_STARTED = ("STATUS_POSTPONED", "STATUS_CANCELED")
+
+
+def scoreboard(day: datetime, now=None):
+    """NBA games today: {pro_team_id: (state, share of game left, short detail, score line, started)}. started: the
+    scheduled tip has passed or the game is in progress or final (ESPN locks lineups at the scheduled tip); a postponed
+    or cancelled game never starts (DECISIONS.md K1)."""
     r = requests.get("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
                      params={"dates": day.strftime("%Y%m%d")}, timeout=20)
     r.raise_for_status()
@@ -87,6 +92,8 @@ def scoreboard(day: datetime):
         c = e["competitions"][0]
         st = c["status"]
         state = st["type"]["state"]
+        started = st["type"].get("name") not in NEVER_STARTED and (
+            state in ("in", "post") or pd.Timestamp(e["date"]) <= (now or pd.Timestamp.now(tz="UTC")))
         per, clock = int(st.get("period") or 0), float(st.get("clock") or 0)
         if state == "pre":
             left = 1.0
@@ -97,7 +104,7 @@ def scoreboard(day: datetime):
         teams = [(int(t["team"]["id"]), t["team"]["abbreviation"], t.get("score")) for t in c["competitors"]]
         line = " · ".join(f"{a} {s}" for _, a, s in teams)
         for tid, _, _ in teams:
-            out[tid] = (state, left, st["type"].get("shortDetail", ""), line)
+            out[tid] = (state, left, st["type"].get("shortDetail", ""), line, started)
     return out
 
 
@@ -197,9 +204,9 @@ def loop():
             games = scoreboard(now)
             frac = {tid: v[1] for tid, v in games.items()}
             if lv is None or lv.period != live["period"]:
-                lv = LV.Live(live=live, today_frac=frac, lg=I.load_league())
+                lv = LV.Live(live=live, today_frac=frac, lg=I.load_league(), started=LV.started_teams(games))
             else:
-                lv.update(live, frac)
+                lv.update(live, frac, started=LV.started_teams(games))
             st = compute(lv, live, me_rows, op_rows, games)
             any_live = any(v[0] == "in" for v in games.values())
             evening_games = any(v[0] == "pre" for v in games.values()) and now.hour >= 17

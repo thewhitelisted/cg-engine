@@ -6,8 +6,10 @@ title odds.
 
     python3 league_page.py OUT_DIR        # writes OUT_DIR/index.html
 
-Used by publish_league.py, which syncs ESPN, rebuilds this page and pushes it to the GitHub Pages repo.
+Used by serve.py, which keeps the live copy on this server (LIVE_URL) current, and publish_league.py, which pushes it
+to the GitHub Pages repo. The page polls LIVE_URL every POLL_MS and falls back to its own site's copy.
 """
+import hashlib
 import html
 import json
 import re
@@ -28,6 +30,9 @@ STAT_OF = {"3PM": "tpm", "REB": "reb", "AST": "ast", "STL": "stl", "BLK": "blk",
 ET = ZoneInfo("America/New_York")
 BENCH_SLOT = 12
 IN_PLAY = (0.3, 0.7)                 # a category is a toss-up while either side has at least a 30% chance
+LIVE_URL = "https://live.christopherjlee.ca/"   # serve.py's output, served by Caddy (server/install.sh)
+POLL_MS = 10000
+VOLATILE = ("updated", "v", "ts")    # build stamps, left out of the content key
 
 
 def cat_values(tot):
@@ -218,7 +223,7 @@ def playing_today(lg, sb, now):
     pro.update(lg.get("pro_team", {}))
     if sb is None:                                       # no scoreboard: today's schedule, no times
         sch = pd.read_csv(M.DATA / "schedule_2027.csv")
-        sb = {int(t): ("pre", 1.0, "", "") for t in sch[sch.date == now.strftime("%Y-%m-%d")].pro_team_id}
+        sb = {int(t): ("pre", 1.0, "", "", False) for t in sch[sch.date == now.strftime("%Y-%m-%d")].pro_team_id}
 
     def when(state, detail):
         if state == "post":
@@ -238,7 +243,7 @@ def playing_today(lg, sb, now):
             team = pro.get(str(pid))
             if slot == I.IR_SLOT or team is None or int(team) not in sb:
                 continue
-            state, _, detail, _ = sb[int(team)]
+            state, _, detail = sb[int(team)][:3]
             label, order = when(state, detail)
             first, _, last = name.partition(" ")
             ps.append({"name": f"{first[0]}. {last}" if last else name, "when": label, "order": order,
@@ -545,13 +550,23 @@ def build(lv, history=None, sb=None, tx=None):
     history = {} if history is None else history
     history.setdefault(str(lv.period), {x["key"]: round(x["p_home"], 3) for x in games})
     attach_trend(games, record_trend(history, lv.period, games, now), now)
-    return {"period": lv.period, "dates": f"{start:%b %-d} – {end:%b %-d}", "start": f"{start:%Y-%m-%d}",
+    data = {"period": lv.period, "dates": f"{start:%b %-d} – {end:%b %-d}", "start": f"{start:%Y-%m-%d}",
             "end": f"{end:%Y-%m-%d}", "games": games, "today": playing_today(lv.lg, sb, now),
             "standings": standings(lv.lg), "grid": week_grid(lv.lg, games, lv.period), "h2h": head_to_head(lv.lg),
             "allplay": all_play(lv.lg), "records": league_records(lv.lg), **dict(zip(("top", "worst"), performers(lv, g, start, end))),
             "last": last_week(lv.lg, history), "scorecard": scorecard(lv.lg, history),
             "moves": recent_moves(tx, lv.lg, now), "awards": awards(lv.lg, history),
             "ranks": category_ranks(lv.lg), "activity": activity(lv.lg, tx, history), "updated": now.strftime("%a %b %-d, %-I:%M %p ET")}
+    # v identifies the content (the page refreshes when it changes, even twice in a minute); ts orders builds, so a
+    # stale copy (the GitHub fallback) never replaces newer numbers
+    data["v"] = hashlib.sha1(content_key(data).encode()).hexdigest()[:12]
+    data["ts"] = int(now.timestamp())
+    return data
+
+
+def content_key(data):
+    """Everything on the page except the build stamps: equal keys mean nothing to republish."""
+    return json.dumps({k: v for k, v in data.items() if k not in VOLATILE}, sort_keys=True, default=str)
 
 
 def compare_one(ta, tb, c):
@@ -687,7 +702,7 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
 @media (max-width: 560px) { td:first-child { white-space: normal; min-width: 116px; } }
 </style>
 </head>
-<body data-updated="%(updated)s">
+<body data-updated="%(updated)s" data-v="%(v)s" data-ts="%(ts)s">
 <div class="wrap">
   <div><h1>The Cool Guys · Matchup %(period)s</h1>
   <div class="sub">%(dates)s · updated %(updated)s</div>%(headline)s</div>
@@ -840,29 +855,37 @@ function initNav() {
 initNav();
 CG.initCharts();
 (() => {                                   // live refresh: new numbers without reloading the page
-  let current = document.body.dataset.updated;
+  const LIVE = "%(live_url)s";
+  let cur = { v: document.body.dataset.v, ts: +document.body.dataset.ts || 0 };
+  const get = async (base, path) => {
+    const r = await fetch(base + path + "?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    return r;
+  };
   async function check() {
     if (document.hidden) return;
-    try {
-      const d = await (await fetch("data.json?t=" + Date.now(), { cache: "no-store" })).json();
-      if (!d.updated || d.updated === current) return;
-      const page = await (await fetch("index.html?t=" + Date.now(), { cache: "no-store" })).text();
-      const doc = new DOMParser().parseFromString(page, "text/html");
-      const fresh = doc.querySelector(".wrap");
-      if (!fresh) return;
-      const open = [...document.querySelectorAll("details.trend[open]")].map(x => x.dataset.key);
-      const y = scrollY;
-      CG.hideTip && CG.hideTip();
-      document.querySelector(".wrap").replaceWith(fresh);
-      open.forEach(k => { const el = document.querySelector(`details.trend[data-key="${CSS.escape(k)}"]`); if (el) el.open = true; });
-      current = doc.body.dataset.updated || d.updated;
-      document.body.dataset.updated = current;
-      initNav();
-      CG.initCharts();
-      scrollTo(0, y);
-    } catch (e) { /* offline or mid-deploy: try again next minute */ }
+    for (const base of [LIVE, ""]) {         // the live server; this site's own copy (updated hourly) if it doesn't answer
+      try {
+        const d = await (await get(base, "data.json")).json();
+        if (!d.v || d.v === cur.v || (d.ts || 0) < cur.ts) return;
+        const doc = new DOMParser().parseFromString(await (await get(base, "index.html")).text(), "text/html");
+        const fresh = doc.querySelector(".wrap");
+        if (!fresh) return;
+        const open = [...document.querySelectorAll("details.trend[open]")].map(x => x.dataset.key);
+        const y = scrollY;
+        CG.hideTip && CG.hideTip();
+        document.querySelector(".wrap").replaceWith(fresh);
+        open.forEach(k => { const el = document.querySelector(`details.trend[data-key="${CSS.escape(k)}"]`); if (el) el.open = true; });
+        cur = { v: doc.body.dataset.v || d.v, ts: +doc.body.dataset.ts || d.ts };
+        Object.assign(document.body.dataset, { v: cur.v, ts: cur.ts, updated: doc.body.dataset.updated || d.updated });
+        initNav();
+        CG.initCharts();
+        scrollTo(0, y);
+        return;
+      } catch (e) { /* unreachable or mid-write: try the next source, then again next round */ }
+    }
   }
-  setInterval(check, 60000);
+  setInterval(check, %(poll_ms)s);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
 })();
 </script>
@@ -1106,6 +1129,7 @@ def render(data):
                                  'results, head-to-head records, all-play and luck, league records, and a running scorecard '
                                  'for the odds.</p>')
     fill = {"period": str(data["period"]), "dates": e(data["dates"]), "updated": e(data["updated"]), "headline": headline,
+            "v": e(str(data.get("v", ""))), "ts": str(int(data.get("ts", 0))), "live_url": LIVE_URL, "poll_ms": str(POLL_MS),
             "cards": "\n  ".join(card(gm, data["start"], data["end"]) for gm in data["games"]), "today": today,
             "standings": standings_html, "grid": grid_html, "h2h": h2h_html, "allplay": allplay_html,
             "records": records_html, "top": top_html, "worst": worst_html, "last": last_html, "scorecard": score_html, "moves": moves_html,
@@ -1121,7 +1145,7 @@ def render(data):
 
 
 def public_json(data):
-    return {k: data[k] for k in ("period", "dates", "updated")} | {
+    return {k: data[k] for k in ("period", "dates", "updated", "v", "ts")} | {
         "games": [{k: gm[k] for k in ("home", "away", "p_home", "score")} for gm in data["games"]]}
 
 
