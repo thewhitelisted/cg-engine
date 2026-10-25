@@ -696,7 +696,7 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
   <p class="note">Win chance: each team's chance to win at least 5 of the 9 categories by Sunday, from what's happened so
   far plus a projection of every remaining game. The strip under each bar is that chance through the week (blue share
   at the bottom, one column per day). Toss-ups: categories where either side has at least a 30% chance to win.
-  Games: player-games already played this week · scheduled games left. Updated every 5 minutes during games.</p>
+  Games: player-games already played this week · scheduled games left. Updated about every 6 minutes during games.</p>
   %(today)s
   %(awards)s
   %(standings)s
