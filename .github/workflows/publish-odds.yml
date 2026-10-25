@@ -4,7 +4,7 @@ on:
   schedule:
     # Cron is UTC and can't follow daylight saving, so each line covers both EDT (UTC-4) and EST (UTC-5).
     - cron: "8-23/15 13,14 * * *"         # :08 and :23 -> 9 AM ET morning refresh (gate.py skips the 10 AM ones)
-    - cron: "8-59/15 15-23,0-6 * * *"     # :08 :23 :38 :53, 11 AM-2:53 AM ET: a run in a game window stays up and publishes every 10 min (loop.py)
+    - cron: "8-59/15 15-23,0-6 * * *"     # :08 :23 :38 :53, 11 AM-2:53 AM ET: a run in a game window stays up and publishes every 5 min (loop.py)
   workflow_dispatch:
     inputs:
       handoff:
@@ -63,7 +63,7 @@ jobs:
           git -C page config user.name "cg-engine"
           git -C page config user.email "cg-engine@users.noreply.github.com"
 
-      - name: Refresh odds and publish (every 10 min through the game window)
+      - name: Refresh odds and publish (every 5 min through the game window)
         if: steps.gate.outputs.run == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}

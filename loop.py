@@ -1,4 +1,4 @@
-"""Publish every 10 minutes while NBA games are on, inside one GitHub Actions job.
+"""Publish every 5 minutes while NBA games are on, inside one GitHub Actions job.
 
 GitHub's scheduler starts runs late or drops them, so one run that lands in a game window stays alive and
 publishes on its own clock until the window closes or MAX_RUN is reached. GitHub stops jobs at 6 h, so at the
@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 
 import gate
 
-INTERVAL = timedelta(minutes=10)
+INTERVAL = timedelta(minutes=5)
 MAX_RUN = timedelta(hours=5, minutes=30)
 
 
@@ -59,11 +59,21 @@ def save_status_log():
         print("status log push failed; retrying after the next publish")
 
 
+def update_code():
+    """Pull the latest code before each publish so changes pushed mid-window go live within one interval
+    (publish_league.py runs as a fresh process; this loop itself keeps the version it started with)."""
+    r = subprocess.run(["git", "pull", "-q", "--rebase", "--autostash"], capture_output=True, text=True)
+    if r.returncode != 0:
+        subprocess.run(["git", "rebase", "--abort"], capture_output=True)
+        print(f"code update skipped: {r.stderr.strip()[:200]}")
+
+
 def main():
     start = datetime.now(gate.ET)
     ok = fails = 0
     while True:
         t0 = datetime.now(gate.ET)
+        update_code()
         if subprocess.run([sys.executable, "publish_league.py"]).returncode == 0:
             ok += 1
         else:

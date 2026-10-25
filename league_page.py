@@ -613,9 +613,29 @@ table.cats th:not(:first-child), table.cats td:not(:first-child) { min-width: 44
 .pct { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.05; }
 .bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--mid); }
 .bar i:first-child { background: var(--a); } .bar i:last-child { background: var(--b); }
-.spark { display: grid; gap: 2px; }
-.spark svg { width: 100%; height: 34px; display: block; border-radius: 4px; background: var(--mid); }
-.days { display: grid; grid-template-columns: repeat(var(--n), 1fr); font-size: 10.5px; color: var(--muted); text-align: center; }
+.trend summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+  gap: 10px; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); user-select: none; }
+.trend summary::-webkit-details-marker { display: none; }
+.trend summary:hover { border-color: var(--muted); }
+.trend summary:hover .pill { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.trend summary:focus-visible { outline: 2px solid var(--a); outline-offset: 2px; }
+.trend .mini { height: 44px; min-width: 0; }
+.trend .mini svg { display: block; width: 100%; height: 100%; }
+.trend[open] .mini { display: none; }
+.trend[open] summary { display: flex; justify-content: flex-end; border-color: transparent; background: none; padding: 0; }
+.trend .pill { font-size: 12.5px; font-weight: 600; color: var(--ink2); border: 1px solid var(--rule); background: var(--card);
+  border-radius: 999px; padding: 5px 11px; white-space: nowrap; transition: background .12s, color .12s; }
+.trend .pill .chev { display: inline-block; margin-left: 4px; transition: transform .15s; }
+.trend[open] .pill .chev { transform: rotate(180deg); }
+.trend .pill .open { display: none; }
+.trend[open] .pill .open { display: inline; }
+.trend[open] .pill .closed { display: none; }
+.tplot { height: 240px; margin-top: 6px; position: relative; touch-action: pan-y; }
+.tplot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.tplot text { font: 11.5px system-ui, sans-serif; fill: var(--muted); }
+.tplot .end { font-weight: 700; font-size: 12.5px; }
+.ttip { position: fixed; z-index: 20; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12.5px;
+  line-height: 1.4; padding: 6px 9px; border-radius: 6px; white-space: nowrap; }
 .inplay { font-size: 12.5px; color: var(--ink2); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .lbl { color: var(--muted); }
 .chip { border: 1px solid var(--rule); border-radius: 999px; padding: 1px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -676,7 +696,7 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
   <p class="note">Win chance: each team's chance to win at least 5 of the 9 categories by Sunday, from what's happened so
   far plus a projection of every remaining game. The strip under each bar is that chance through the week (blue share
   at the bottom, one column per day). Toss-ups: categories where either side has at least a 30% chance to win.
-  Games: player-games already played this week · scheduled games left. Updated every 10 minutes during games.</p>
+  Games: player-games already played this week · scheduled games left. Updated every 5 minutes during games.</p>
   %(today)s
   %(awards)s
   %(standings)s
@@ -722,33 +742,110 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
   addEventListener("scroll", () => { if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) update(); }, { passive: true });
   links.forEach(a => a.addEventListener("click", () => { mark(a.getAttribute("href").slice(1)); hold = Date.now() + 900; }));
 })();
+(() => {
+  const NS = "http://www.w3.org/2000/svg";
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const tip = Object.assign(document.createElement("div"), { className: "ttip", hidden: true });
+  document.body.appendChild(tip);
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; };
+  const day = d => new Date(d + "T00:00:00");
+  const fmt = t => t.toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
+  function draw(box) {
+    const pts = JSON.parse(box.dataset.trend).map(([ts, p]) => [new Date(ts), p]);
+    const t0 = day(box.dataset.start), t1 = new Date(day(box.dataset.end).getTime() + 86400000);
+    const ha = box.dataset.ha, aa = box.dataset.aa;
+    box.innerHTML = "";
+    const W = box.clientWidth, H = box.clientHeight, L = 34, R = 64, T = 10, B = 24;
+    const x = t => L + (t - t0) / (t1 - t0) * (W - L - R), y = p => T + (1 - p) * (H - T - B);
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}` }, box);
+    for (const g of [0, .25, .5, .75, 1]) {
+      el("line", { x1: L, x2: W - R, y1: y(g), y2: y(g), stroke: css("--rule"), "stroke-dasharray": g === .5 ? "4 3" : "" }, svg);
+      el("text", { x: L - 6, y: y(g) + 4, "text-anchor": "end" }, svg).textContent = Math.round(g * 100) + "%";
+    }
+    for (let d = new Date(t0); d < t1; d = new Date(d.getTime() + 86400000)) {
+      el("line", { x1: x(d), x2: x(d), y1: T, y2: H - B, stroke: css("--rule"), "stroke-opacity": .6 }, svg);
+      el("text", { x: x(new Date(d.getTime() + 43200000)), y: H - 6, "text-anchor": "middle" }, svg).textContent =
+        d.toLocaleDateString("en-US", { weekday: "short" });
+    }
+    const path = f => pts.map(([t, p], i) => (i ? `H${x(t)}V${y(f(p))}` : `M${x(t)},${y(f(p))}`)).join("");
+    const lines = [[p => p, "--a", ha], [p => 1 - p, "--b", aa]];
+    const last = pts[pts.length - 1];
+    const endY = lines.map(([f]) => y(f(last[1])));
+    if (Math.abs(endY[0] - endY[1]) < 15) { const m = (endY[0] + endY[1]) / 2, s = endY[0] <= endY[1] ? -1 : 1;
+      endY[0] = m + s * 8; endY[1] = m - s * 8; }
+    lines.forEach(([f, c, name], k) => {
+      if (pts.length > 1) el("path", { d: path(f), fill: "none", stroke: css(c), "stroke-width": 2.25, "stroke-linejoin": "round" }, svg);
+      el("circle", { cx: x(last[0]), cy: y(f(last[1])), r: 3.5, fill: css(c) }, svg);
+      const lab = el("text", { x: x(last[0]) + 8, y: endY[k] + 4, class: "end", fill: css(c) }, svg);
+      lab.style.fill = css(c);
+      const hp = Math.round(last[1] * 100);
+      lab.textContent = `${name} ${k === 0 ? hp : 100 - hp}%`;     // labels always sum to 100
+    });
+    const cross = el("line", { y1: T, y2: H - B, stroke: css("--muted"), "stroke-dasharray": "3 3", visibility: "hidden" }, svg);
+    const dots = lines.map(([, c]) => el("circle", { r: 4.5, fill: css(c), stroke: css("--card"), "stroke-width": 2, visibility: "hidden" }, svg));
+    const hit = el("rect", { x: L, y: T, width: Math.max(W - L - R, 1), height: H - T - B, fill: "transparent" }, svg);
+    const move = ev => {
+      const r = svg.getBoundingClientRect(), px = Math.min(Math.max(ev.clientX - r.left, x(pts[0][0])), x(last[0]));
+      let k = 0;
+      while (k + 1 < pts.length && x(pts[k + 1][0]) <= px) k++;
+      const [t, p] = pts[k];
+      cross.setAttribute("x1", px); cross.setAttribute("x2", px); cross.setAttribute("visibility", "visible");
+      lines.forEach(([f], i) => { dots[i].setAttribute("cx", px); dots[i].setAttribute("cy", y(f(p))); dots[i].setAttribute("visibility", "visible"); });
+      tip.innerHTML = `<b>${fmt(t)}</b><br>${ha} ${(p * 100).toFixed(1)}% · ${aa} ${((1 - p) * 100).toFixed(1)}%`;
+      tip.hidden = false;
+      tip.style.left = Math.min(ev.clientX + 14, innerWidth - tip.offsetWidth - 8) + "px";
+      tip.style.top = (ev.clientY - tip.offsetHeight - 12) + "px";
+    };
+    const leave = () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); dots.forEach(d => d.setAttribute("visibility", "hidden")); };
+    hit.addEventListener("pointermove", move);
+    hit.addEventListener("pointerdown", move);
+    hit.addEventListener("pointerleave", leave);
+  }
+  function mini(box) {
+    const pts = JSON.parse(box.dataset.trend).map(([ts, p]) => [new Date(ts), p]);
+    const t0 = day(box.dataset.start), t1 = new Date(day(box.dataset.end).getTime() + 86400000);
+    box.innerHTML = "";
+    const W = box.clientWidth, H = box.clientHeight, P = 3;
+    if (!W) return;
+    const x = t => (t - t0) / (t1 - t0) * W, y = p => P + (1 - p) * (H - 2 * P);
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}` }, box);
+    el("line", { x1: 0, x2: W, y1: y(.5), y2: y(.5), stroke: css("--rule"), "stroke-dasharray": "3 3" }, svg);
+    for (let d = new Date(t0.getTime() + 86400000); d < t1; d = new Date(d.getTime() + 86400000))
+      el("line", { x1: x(d), x2: x(d), y1: 0, y2: H, stroke: css("--rule"), "stroke-opacity": .5 }, svg);
+    [[p => p, "--a"], [p => 1 - p, "--b"]].forEach(([f, c]) => {
+      const d = pts.map(([t, p], i) => (i ? `H${x(t)}V${y(f(p))}` : `M${x(t)},${y(f(p))}`)).join("");
+      if (pts.length > 1) el("path", { d, fill: "none", stroke: css(c), "stroke-width": 1.75 }, svg);
+      const [t, p] = pts[pts.length - 1];
+      el("circle", { cx: x(t), cy: y(f(p)), r: 2.5, fill: css(c) }, svg);
+    });
+  }
+  document.querySelectorAll(".trend .mini").forEach(mini);
+  document.querySelectorAll("details.trend").forEach(d => d.addEventListener("toggle", () => {
+    if (d.open) draw(d.querySelector(".tplot")); else tip.hidden = true;
+  }));
+  let w = innerWidth;
+  addEventListener("resize", () => { if (innerWidth === w) return; w = innerWidth;
+    document.querySelectorAll("details.trend[open] .tplot").forEach(draw);
+    document.querySelectorAll("details.trend:not([open]) .mini").forEach(mini); });
+})();
 </script>
 </body>
 </html>
 """
 
 
-def spark(trend, start, end):
-    """Inline SVG of the home side's win chance through the week (shaded like the bar), plus day labels."""
-    t0 = datetime.fromisoformat(start)
-    days = (datetime.fromisoformat(end) - t0).days + 1
-    span = days * 86400
-    pts = [(min(300, max(0, (datetime.fromisoformat(ts) - t0).total_seconds() / span * 300)), 34 * (1 - p)) for ts, p in trend]
-    if not pts:
+def trend_block(trend, start, end, ha, aa):
+    """Collapsible odds-history chart (drawn in the browser): both teams' chances through the week, hover for values."""
+    if not trend:
         return ""
-    if len(pts) == 1:
-        pts = pts + [(min(300, pts[0][0] + 3), pts[0][1])]
-    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
-    x0, xn = pts[0][0], pts[-1][0]
-    grid = "".join(f'<line x1="{300 * k / days:.1f}" y1="0" x2="{300 * k / days:.1f}" y2="34" stroke="var(--rule)" '
-                   f'vector-effect="non-scaling-stroke"/>' for k in range(1, days))
-    labels = "".join(f"<span>{(t0 + timedelta(days=k)):%a}</span>" for k in range(days))
-    return (f'<div class="spark"><svg viewBox="0 0 300 34" preserveAspectRatio="none" aria-hidden="true">{grid}'
-            f'<polygon points="{x0:.1f},34 {line} {xn:.1f},34" fill="var(--a)" fill-opacity=".35"/>'
-            f'<polygon points="{x0:.1f},0 {line} {xn:.1f},0" fill="var(--b)" fill-opacity=".35"/>'
-            f'<line x1="0" y1="17" x2="300" y2="17" stroke="var(--muted)" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>'
-            f'<polyline points="{line}" fill="none" stroke="var(--ink2)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>'
-            f'</svg><div class="days" style="--n:{days}">{labels}</div></div>')
+    data = html.escape(json.dumps([[ts, round(p, 4)] for ts, p in trend]))
+    attrs = f'data-trend="{data}" data-start="{start}" data-end="{end}" data-ha="{ha}" data-aa="{aa}"'
+    return (f'<details class="trend"><summary aria-label="Odds history chart">'
+            f'<div class="mini" {attrs} aria-hidden="true"></div>'
+            f'<span class="pill"><span class="closed">Expand chart</span><span class="open">Collapse</span>'
+            f'<span class="chev">&#8964;</span></span></summary>'
+            f'<div class="tplot" {attrs}></div></details>')
 
 
 def card(gm, start, end):
@@ -781,9 +878,9 @@ def card(gm, start, end):
             f'<div class="side r"><div class="team hb">{e(gm["away"])}</div><div class="pct hb">{1 - ph:.0%}</div>'
             f'<div class="meta">leads {l} of 9 · {ap} played, {al} left</div></div>'
             f'</div>'
-            f'<div class="bar" aria-hidden="true"><i style="width:{100 * ph:.1f}%"></i><i style="width:{100 * (1 - ph):.1f}%"></i></div>'
+            f'<div class="bar" title="{ha} {ph:.1%} · {aa} {1 - ph:.1%}"><i style="width:{100 * ph:.1f}%"></i><i style="width:{100 * (1 - ph):.1f}%"></i></div>'
             f'<div class="caption">{" · ".join(bits)}</div>'
-            f'{spark(gm.get("trend") or [], start, end)}'
+            f'{trend_block(gm.get("trend") or [], start, end, ha, aa)}'
             f'<div class="scroll"><table class="cats"><tr><th></th>{head}</tr>'
             f'<tr><td><span class="dot da"></span>{ha}</td>{rh}</tr>'
             f'<tr><td><span class="dot db"></span>{aa}</td>{ra}</tr></table></div>'
