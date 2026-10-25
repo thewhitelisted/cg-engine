@@ -41,7 +41,7 @@ ACTIVE = (0, 1, 2, 3, 4, 5, 6, 11)
 CAT_COLS = {"FG%": "fg", "FT%": "ft", "3PM": "tpm", "REB": "reb", "AST": "ast", "STL": "stl", "BLK": "blk", "TO": "tov",
             "PTS": "pts"}
 REPLAY = M.DATA / ".cache_k1_replay.pkl"
-K1_LIVE = None                    # when the published odds switched from L4 to K1 (the server publisher's start)
+K1_LIVE = pd.Timestamp("2026-10-25 17:55", tz=ET)   # published odds switched from L4 to K1 (server publisher start)
 SB = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
 
 
