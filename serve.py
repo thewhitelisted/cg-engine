@@ -252,6 +252,12 @@ class Publisher:
                 f.write(json.dumps(rec, default=str) + "\n")
         return rec
 
+    def force_snapshot(self):
+        """Push the page to GitHub on the next round even if the numbers haven't changed (new page code must reach
+        the copy visitors load first)."""
+        self.state["snapshot_at"], self.state["snapshot_key"] = 0, None
+        self.save()
+
     def snapshot(self):
         """Commit the current page to the GitHub Pages repo (the page's fallback) if it changed since the last one,
         then commit this repo's status and lineup logs."""
@@ -338,6 +344,7 @@ def main():
             code_at = time.time()
             try:
                 if code_changed():
+                    pub.force_snapshot()
                     os.execv(sys.executable, [sys.executable, *sys.argv])
             except Exception as e:
                 log(f"code update failed: {type(e).__name__}: {e}")

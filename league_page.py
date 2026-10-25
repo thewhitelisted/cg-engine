@@ -840,12 +840,17 @@ function initNav() {
       el("circle", { cx: x(t), cy: y(f(p)), r: 2.5, fill: css(c) }, svg);
     });
   }
+  CG.draw = draw;
+  CG.mini = mini;
+  CG.bindCharts = () => document.querySelectorAll("details.trend").forEach(d => {
+    if (d._cg) return;                     // once per element (live refresh keeps elements)
+    d._cg = true;
+    d.addEventListener("toggle", () => { if (d.open) draw(d.querySelector(".tplot")); else tip.hidden = true; });
+  });
   CG.initCharts = () => {
     document.querySelectorAll(".trend .mini").forEach(mini);
-    document.querySelectorAll("details.trend").forEach(d => {
-      d.addEventListener("toggle", () => { if (d.open) draw(d.querySelector(".tplot")); else tip.hidden = true; });
-      if (d.open) draw(d.querySelector(".tplot"));
-    });
+    CG.bindCharts();
+    document.querySelectorAll("details.trend[open] .tplot").forEach(draw);
   };
   let w = innerWidth;
   addEventListener("resize", () => { if (innerWidth === w) return; w = innerWidth;
@@ -854,7 +859,7 @@ function initNav() {
 })();
 initNav();
 CG.initCharts();
-(() => {                                   // live refresh: new numbers without reloading the page
+(() => {                                   // live refresh: changed numbers update in place; scroll and open charts stay
   const LIVE = "%(live_url)s";
   let cur = { v: document.body.dataset.v, ts: +document.body.dataset.ts || 0 };
   const get = async (base, path) => {
@@ -862,6 +867,33 @@ CG.initCharts();
     if (!r.ok) throw new Error(r.status);
     return r;
   };
+  const key = n => (n.nodeType === 1 ? n.getAttribute("data-key") || n.id || "" : "");
+  const charts = n => (n.nodeType === 1 ? [...(n.matches(".tplot, .mini") ? [n] : []), ...n.querySelectorAll(".tplot, .mini")] : []);
+  const hrefs = n => [...n.querySelectorAll("a")].map(a => a.getAttribute("href")).join();
+  function morph(a, b, st) {               // make a match b, keeping a's elements (and their state) wherever they line up
+    if (a.nodeType !== 1) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }
+    if (a.matches("nav.jump")) {           // keep the highlighted section unless the sections themselves changed
+      if (hrefs(a) !== hrefs(b)) { a.replaceWith(document.importNode(b, true)); st.nav = true; }
+      return;
+    }
+    let changed = false;
+    for (const { name } of [...a.attributes])
+      if (!b.hasAttribute(name) && !(name === "open" && a.tagName === "DETAILS")) { a.removeAttribute(name); changed = true; }
+    for (const { name, value } of [...b.attributes])
+      if (a.getAttribute(name) !== value) { a.setAttribute(name, value); changed = true; }
+    if (a.matches(".tplot, .mini")) { if (changed) st.dirty.add(a); return; }   // drawn by script from their data-*
+    const keyed = new Map(), free = [];
+    for (const n of a.childNodes) key(n) ? keyed.set(key(n), n) : free.push(n);
+    let j = 0;
+    [...b.childNodes].forEach((y, i) => {
+      let x = key(y) ? keyed.get(key(y)) : free[j++];
+      if (key(y)) keyed.delete(key(y));
+      if (x && x.nodeName === y.nodeName) morph(x, y, st);
+      else { x = document.importNode(y, true); charts(x).forEach(c => st.dirty.add(c)); }
+      if (a.childNodes[i] !== x) a.insertBefore(x, a.childNodes[i] || null);
+    });
+    while (a.childNodes.length > b.childNodes.length) a.removeChild(a.lastChild);
+  }
   async function check() {
     if (document.hidden) return;
     for (const base of [LIVE, ""]) {         // the live server; this site's own copy (updated hourly) if it doesn't answer
@@ -871,21 +903,19 @@ CG.initCharts();
         const doc = new DOMParser().parseFromString(await (await get(base, "index.html")).text(), "text/html");
         const fresh = doc.querySelector(".wrap");
         if (!fresh) return;
-        const open = [...document.querySelectorAll("details.trend[open]")].map(x => x.dataset.key);
-        const y = scrollY;
-        CG.hideTip && CG.hideTip();
-        document.querySelector(".wrap").replaceWith(fresh);
-        open.forEach(k => { const el = document.querySelector(`details.trend[data-key="${CSS.escape(k)}"]`); if (el) el.open = true; });
+        const st = { dirty: new Set(), nav: false };
+        morph(document.querySelector(".wrap"), fresh, st);
         cur = { v: doc.body.dataset.v || d.v, ts: +doc.body.dataset.ts || d.ts };
         Object.assign(document.body.dataset, { v: cur.v, ts: cur.ts, updated: doc.body.dataset.updated || d.updated });
-        initNav();
-        CG.initCharts();
-        scrollTo(0, y);
+        CG.bindCharts();
+        st.dirty.forEach(box => box.matches(".tplot") ? box.closest("details.trend")?.open && CG.draw(box) : CG.mini(box));
+        if (st.nav) initNav();
         return;
       } catch (e) { /* unreachable or mid-write: try the next source, then again next round */ }
     }
   }
   setInterval(check, %(poll_ms)s);
+  check();                                 // right away: the page itself may be the hourly copy
   document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
 })();
 </script>
@@ -930,7 +960,7 @@ def card(gm, start, end):
         inplay = '<div class="inplay"><span class="lbl">No toss-up categories left.</span></div>'
     else:
         inplay = ""
-    return (f'<div class="card">'
+    return (f'<div class="card" data-key="{e(gm.get("key", ""))}">'
             f'<div class="matchup">'
             f'<div class="side"><div class="team ha">{e(gm["home"])}</div><div class="pct ha">{ph:.0%}</div>'
             f'<div class="meta">leads {w} of 9 · {hp} played, {hl} left</div></div>'

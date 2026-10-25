@@ -213,6 +213,18 @@ class ArchiveTest(unittest.TestCase):
         self.assertEqual(pub.lv.locks, serve.LV.LINEUP_LOCKS)             # the published rule is back on
 
 
+class ForceSnapshotTest(unittest.TestCase):
+    def test_new_code_forces_the_next_snapshot(self):
+        d = Path(tempfile.mkdtemp())
+        with mock.patch.object(serve, "STATE", d / "state.json"):
+            pub = serve.Publisher(d / "out", dry_run=True)
+            pub.dry = False
+            pub.state.update(snapshot_at=time.time(), snapshot_key="k")
+            pub.force_snapshot()
+            saved = json.loads((d / "state.json").read_text())
+        self.assertEqual((saved["snapshot_at"], saved["snapshot_key"]), (0, None))
+
+
 class AlertTest(unittest.TestCase):
     def setUp(self):
         self.state, self.saves = {}, 0
