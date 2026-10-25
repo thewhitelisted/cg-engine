@@ -4,10 +4,11 @@ luck, league records, top performers, last week's odds against results, the mode
 adds/drops. Nothing player-level from the model (no projections, values or recommendations) and no playoff or
 title odds.
 
-    python3 league_page.py OUT_DIR        # writes OUT_DIR/index.html
+    python3 league_page.py OUT_DIR        # writes a copy of the site (page, app, state) to OUT_DIR
 
-Used by serve.py, which keeps the live copy on this server (LIVE_URL) current, and publish_league.py, which pushes it
-to the GitHub Pages repo. The page polls LIVE_URL every POLL_MS and falls back to its own site's copy.
+build() gathers the page's data; api_state() turns it into the public JSON API (api/state.json), which web/app.js renders
+in the browser and keeps current from api/events (api.py). serve.py runs it on the server (LIVE_URL); publish_league.py
+is the manual fallback that writes a copy of the site to the GitHub Pages repo.
 """
 import hashlib
 import html
@@ -30,8 +31,7 @@ STAT_OF = {"3PM": "tpm", "REB": "reb", "AST": "ast", "STL": "stl", "BLK": "blk",
 ET = ZoneInfo("America/New_York")
 BENCH_SLOT = 12
 IN_PLAY = (0.3, 0.7)                 # a category is a toss-up while either side has at least a 30% chance
-LIVE_URL = "https://live.christopherjlee.ca/"   # serve.py's output, served by Caddy (server/install.sh)
-POLL_MS = 10000
+LIVE_URL = "https://live.christopherjlee.ca/"   # the API (serve.py + api.py, behind Caddy: server/install.sh)
 VOLATILE = ("updated", "v", "ts")    # build stamps, left out of the content key
 
 
@@ -593,13 +593,12 @@ def last_week(lg, history):
     return {"period": wk, "rows": rows}
 
 
-PAGE = """<!doctype html>
+SHELL_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<meta http-equiv="refresh" content="1800">
 <title>The Cool Guys · League page</title>
 <style>
 :root { --bg: #f6f6f2; --card: #fcfcfb; --ink: #15171a; --ink2: #4d5056; --muted: #84878c; --rule: #e1e0d9;
@@ -702,33 +701,8 @@ table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background
 @media (max-width: 560px) { td:first-child { white-space: normal; min-width: 116px; } }
 </style>
 </head>
-<body data-updated="%(updated)s" data-v="%(v)s" data-ts="%(ts)s">
-<div class="wrap">
-  <div><h1>The Cool Guys · Matchup %(period)s</h1>
-  <div class="sub">%(dates)s · updated %(updated)s</div>%(headline)s</div>
-  %(nav)s
-  <div id="matchups" style="display:grid;gap:14px">%(cards)s</div>
-  <p class="note">Win chance: each team's chance to win at least 5 of the 9 categories by Sunday, from what's happened so
-  far plus a projection of every remaining game. The strip under each bar is that chance through the week (blue share
-  at the bottom, one column per day). Toss-ups: categories where either side has at least a 30% chance to win.
-  Games: player-games already played this week · scheduled games left. Updates live: new numbers appear on their own, without reloading.</p>
-  %(today)s
-  %(awards)s
-  %(standings)s
-  %(grid)s
-  %(ranks)s
-  %(h2h)s
-  %(allplay)s
-  %(records)s
-  %(top)s
-  %(worst)s
-  %(last)s
-  %(scorecard)s
-  %(moves)s
-  %(activity)s
-  %(later)s
-  <footer class="foot"><a class="btn" href="insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
-</div>
+<body>
+<div class="wrap"><p class="note">Loading…</p></div>
 <script>
 const CG = {};
 function initNav() {
@@ -857,331 +831,68 @@ function initNav() {
     document.querySelectorAll("details.trend[open] .tplot").forEach(draw);
     document.querySelectorAll("details.trend:not([open]) .mini").forEach(mini); });
 })();
-initNav();
-CG.initCharts();
-(() => {                                   // live refresh: changed numbers update in place; scroll and open charts stay
-  const LIVE = "%(live_url)s";
-  let cur = { v: document.body.dataset.v, ts: +document.body.dataset.ts || 0 };
-  const get = async (base, path) => {
-    const r = await fetch(base + path + "?t=" + Date.now(), { cache: "no-store" });
-    if (!r.ok) throw new Error(r.status);
-    return r;
-  };
-  const key = n => (n.nodeType === 1 ? n.getAttribute("data-key") || n.id || "" : "");
-  const charts = n => (n.nodeType === 1 ? [...(n.matches(".tplot, .mini") ? [n] : []), ...n.querySelectorAll(".tplot, .mini")] : []);
-  const hrefs = n => [...n.querySelectorAll("a")].map(a => a.getAttribute("href")).join();
-  function morph(a, b, st) {               // make a match b, keeping a's elements (and their state) wherever they line up
-    if (a.nodeType !== 1) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }
-    if (a.matches("nav.jump")) {           // keep the highlighted section unless the sections themselves changed
-      if (hrefs(a) !== hrefs(b)) { a.replaceWith(document.importNode(b, true)); st.nav = true; }
-      return;
-    }
-    let changed = false;
-    for (const { name } of [...a.attributes])
-      if (!b.hasAttribute(name) && !(name === "open" && a.tagName === "DETAILS")) { a.removeAttribute(name); changed = true; }
-    for (const { name, value } of [...b.attributes])
-      if (a.getAttribute(name) !== value) { a.setAttribute(name, value); changed = true; }
-    if (a.matches(".tplot, .mini")) { if (changed) st.dirty.add(a); return; }   // drawn by script from their data-*
-    const keyed = new Map(), free = [];
-    for (const n of a.childNodes) key(n) ? keyed.set(key(n), n) : free.push(n);
-    let j = 0;
-    [...b.childNodes].forEach((y, i) => {
-      let x = key(y) ? keyed.get(key(y)) : free[j++];
-      if (key(y)) keyed.delete(key(y));
-      if (x && x.nodeName === y.nodeName) morph(x, y, st);
-      else { x = document.importNode(y, true); charts(x).forEach(c => st.dirty.add(c)); }
-      if (a.childNodes[i] !== x) a.insertBefore(x, a.childNodes[i] || null);
-    });
-    while (a.childNodes.length > b.childNodes.length) a.removeChild(a.lastChild);
-  }
-  async function check() {
-    if (document.hidden) return;
-    for (const base of [LIVE, ""]) {         // the live server; this site's own copy (updated hourly) if it doesn't answer
-      try {
-        const d = await (await get(base, "data.json")).json();
-        if (!d.v || d.v === cur.v || (d.ts || 0) < cur.ts) return;
-        const doc = new DOMParser().parseFromString(await (await get(base, "index.html")).text(), "text/html");
-        const fresh = doc.querySelector(".wrap");
-        if (!fresh) return;
-        const st = { dirty: new Set(), nav: false };
-        morph(document.querySelector(".wrap"), fresh, st);
-        cur = { v: doc.body.dataset.v || d.v, ts: +doc.body.dataset.ts || d.ts };
-        Object.assign(document.body.dataset, { v: cur.v, ts: cur.ts, updated: doc.body.dataset.updated || d.updated });
-        CG.bindCharts();
-        st.dirty.forEach(box => box.matches(".tplot") ? box.closest("details.trend")?.open && CG.draw(box) : CG.mini(box));
-        if (st.nav) initNav();
-        return;
-      } catch (e) { /* unreachable or mid-write: try the next source, then again next round */ }
-    }
-  }
-  setInterval(check, %(poll_ms)s);
-  check();                                 // right away: the page itself may be the hourly copy
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
-})();
 </script>
+<script>window.CG_API = window.CG_API ?? "%(live_url)s";</script>
+<script src="app.js"></script>
 </body>
 </html>
 """
 
 
-def trend_block(trend, start, end, ha, aa, key=""):
-    """Collapsible odds-history chart (drawn in the browser): both teams' chances through the week, hover for values."""
-    if not trend:
-        return ""
-    data = html.escape(json.dumps([[ts, round(p, 4)] for ts, p in trend]))
-    attrs = f'data-trend="{data}" data-start="{start}" data-end="{end}" data-ha="{ha}" data-aa="{aa}"'
-    return (f'<details class="trend" data-key="{html.escape(key)}"><summary aria-label="Odds history chart">'
-            f'<div class="mini" {attrs} aria-hidden="true"></div>'
-            f'<span class="pill"><span class="closed">Expand chart</span><span class="open">Collapse</span>'
-            f'<span class="chev">&#8964;</span></span></summary>'
-            f'<div class="tplot" {attrs}></div></details>')
+GAME_FIELDS = ("key", "home", "away", "home_abbr", "away_abbr", "p_home", "score", "games", "totals", "lead", "swing",
+               "in_play", "trend")
+STATE_FIELDS = ("period", "dates", "start", "end", "updated", "v", "ts", "standings", "grid", "h2h", "allplay", "records",
+                "top", "worst", "last", "scorecard", "awards", "ranks", "activity")
 
 
-def card(gm, start, end):
-    e = html.escape
-    ph = gm["p_home"]
-    w, l, t = gm["score"]
-    (hp, hl), (ap, al) = gm["games"]
-    ha, aa = e(gm.get("home_abbr") or gm["home"][:3].upper()), e(gm.get("away_abbr") or gm["away"][:3].upper())
-    head = "".join(f"<th>{c}</th>" for c in CATS)
-    rh = "".join(f'<td class="{"lead ha" if s == 1 else ""}">{h}</td>' for (c, h, a), s in zip(gm["totals"], gm["lead"]))
-    ra = "".join(f'<td class="{"lead hb" if s == -1 else ""}">{a}</td>' for (c, h, a), s in zip(gm["totals"], gm["lead"]))
-    bits = ["chance to win the week"]
-    sw = gm.get("swing")
-    if sw is not None and abs(sw) >= 0.01:
-        bits.append(f'<span class="{"ha" if sw > 0 else "hb"}">{ha if sw > 0 else aa} +{100 * abs(sw):.0f}</span> since yesterday')
-    if t:
-        bits.append(f"{t} tied")
-    ip = gm.get("in_play")
-    if ip:
-        chips = "".join(f'<span class="chip"><b>{e(c)}</b> {e(txt)}</span>' for c, txt in ip)
-        inplay = f'<div class="inplay"><span class="lbl">Toss-ups</span>{chips}</div>'
-    elif ip is not None:
-        inplay = '<div class="inplay"><span class="lbl">No toss-up categories left.</span></div>'
-    else:
-        inplay = ""
-    return (f'<div class="card" data-key="{e(gm.get("key", ""))}">'
-            f'<div class="matchup">'
-            f'<div class="side"><div class="team ha">{e(gm["home"])}</div><div class="pct ha">{ph:.0%}</div>'
-            f'<div class="meta">leads {w} of 9 · {hp} played, {hl} left</div></div>'
-            f'<div class="side r"><div class="team hb">{e(gm["away"])}</div><div class="pct hb">{1 - ph:.0%}</div>'
-            f'<div class="meta">leads {l} of 9 · {ap} played, {al} left</div></div>'
-            f'</div>'
-            f'<div class="bar" title="{ha} {ph:.1%} · {aa} {1 - ph:.1%}"><i style="width:{100 * ph:.1f}%"></i><i style="width:{100 * (1 - ph):.1f}%"></i></div>'
-            f'<div class="caption">{" · ".join(bits)}</div>'
-            f'{trend_block(gm.get("trend") or [], start, end, ha, aa, gm.get("key", ""))}'
-            f'<div class="scroll"><table class="cats"><tr><th></th>{head}</tr>'
-            f'<tr><td><span class="dot da"></span>{ha}</td>{rh}</tr>'
-            f'<tr><td><span class="dot db"></span>{aa}</td>{ra}</tr></table></div>'
-            f'{inplay}'
-            f'</div>')
+def _plain(o):
+    if isinstance(o, np.integer):
+        return int(o)
+    if isinstance(o, np.floating):
+        return float(o)
+    if isinstance(o, np.bool_):
+        return bool(o)
+    raise TypeError(f"not JSON: {type(o).__name__}")
 
 
-def section(title, body, note="", sid=""):
-    return (f'<section id="{sid}" style="display:grid;gap:14px"><h2>{title}</h2><div class="card tbl scroll">{body}</div>'
-            + (f'<p class="note">{note}</p>' if note else "") + "</section>")
+def api_state(data):
+    """The public API (api/state.json; web/app.js renders it): exactly what the page shows, as plain JSON. Leaves out what
+    the page doesn't display: each matchup's category probabilities, sort keys, raw transaction times."""
+    games = [{k: g.get(k) for k in GAME_FIELDS} for g in data["games"]]
+    for g in games:
+        g["trend"] = [[ts, round(float(p), 4)] for ts, p in g["trend"] or []]
+    today = None if data.get("today") is None else [
+        {**r, "players": [{k: p[k] for k in ("name", "when", "bench", "out")} for p in r["players"]]} for r in data["today"]]
+    moves = [{k: v for k, v in m.items() if k != "ts"} for m in data.get("moves") or []]
+    state = json.loads(json.dumps({**{k: data.get(k) for k in STATE_FIELDS}, "games": games, "today": today, "moves": moves},
+                                  default=_plain))
+    shown = {k: v for k, v in state.items() if k not in VOLATILE}       # v names what's displayed, nothing else
+    state["v"] = hashlib.sha1(json.dumps(shown, sort_keys=True).encode()).hexdigest()[:12]
+    return state
 
 
-NAV = [("matchups", "Matchups"), ("today", "Today"), ("awards", "Awards"), ("standings", "Standings"),
-       ("weeks", "Weekly"), ("ranks", "Cat ranks"), ("h2h", "Head to head"), ("allplay", "All-play"),
-       ("records", "Records"), ("top", "Best players"), ("worst", "Worst players"), ("odds", "Odds"), ("moves", "Moves"), ("activity", "Activity")]
+def shell():
+    """The page itself: styles, chart and section-nav code, and web/app.js, which builds everything else in the browser
+    from the JSON API (LIVE_URL, then this site's own api/state.json if that doesn't answer)."""
+    return SHELL_TEMPLATE.replace("%(live_url)s", LIVE_URL)
 
 
-def render(data):
-    e = html.escape
-    finished = any(r["w"] + r["l"] + r["t"] for r in data["standings"])
-
-    headline = ""
-    moved = [g for g in data["games"] if g.get("swing") is not None and abs(g["swing"]) >= 0.05]
-    if moved:
-        g = max(moved, key=lambda g: abs(g["swing"]))
-        sw, p = g["swing"], g["p_home"]
-        team, now, before = (g["home"], p, p - sw) if sw > 0 else (g["away"], 1 - p, 1 - p + sw)
-        headline = (f'<div class="headline">Biggest swing since yesterday: <b>{e(team)}</b> '
-                    f'{before:.0%} → {now:.0%}</div>')
-
-    today = ""
-    if data.get("today") and any(r["n"] for r in data["today"]):
-        rows = []
-        for r in data["today"]:
-            who = "".join(f'<span class="{"out" if p["out"] else "bn" if p["bench"] else ""}">{e(p["name"])} '
-                          f'{e(p["when"])}{" (bench)" if p["bench"] and not p["out"] else ""}</span>' for p in r["players"])
-            rows.append(f'<tr><td>{e(r["team"])}</td><td>{r["lineup"]}</td><td>{r["n"]}</td><td class="who">{who or "—"}</td></tr>')
-        today = section("Playing today", f'<table><tr><th>Team</th><th>In lineup</th><th>With a game</th><th class="l">Who · tip-off</th></tr>'
-                        f'{"".join(rows)}</table>',
-                        "In lineup: players with a game today in an active slot and not ruled out. Bench in grey, "
-                        "ruled out struck through. Times Eastern.", "today")
-    elif data.get("today") is not None:
-        today = '<section id="today"><h2>Playing today</h2><p class="note">No NBA games today.</p></section>'
-
-    standings_html = ""
-    if finished:
-        st = "".join(f'<tr><td>{i + 1}. {e(r["team"])}</td><td>{r["w"]}–{r["l"]}–{r["t"]}</td><td>{r["pct"]:.3f}</td>'
-                     f'<td>{"—" if r["gb"] == 0 else f"{r["gb"]:g}"}</td></tr>' for i, r in enumerate(data["standings"]))
-        standings_html = section("Standings", f'<table><tr><th>Team</th><th>Categories W–L–T</th><th>Pct</th><th>GB</th></tr>{st}</table>', sid="standings")
-
-    grid_html = ""
-    gd = data.get("grid")
-    if gd:
-        head = "".join(f"<th>{w}</th>" for w in gd["weeks"])
-        rows = []
-        for r in gd["rows"]:
-            cells = "".join("<td></td>" if c is None else
-                            f'<td class="{"g" + c[3] if c[4] else "live"}">{c[0]}–{c[1]}{f"–{c[2]}" if c[2] else ""}</td>'
-                            for c in r["cells"])
-            rows.append(f'<tr><td>{e(r["team"])}</td><td>{r["rec"][0]}–{r["rec"][1]}{f"–{r["rec"][2]}" if r["rec"][2] else ""}</td>{cells}</tr>')
-        grid_html = section("Week by week", f'<table class="grid"><tr><th>Team</th><th>Matchups</th>{head}</tr>{"".join(rows)}</table>',
-                            "Category score in each matchup. Green won, red lost; grey italic is this week, still in progress.", "weeks")
-
-    h2h_html = ""
-    hh = data.get("h2h")
-    if hh:
-        head = "".join(f"<th>{e(c)}</th>" for c in hh["cols"])
-        rows = []
-        for r in hh["rows"]:
-            cells = []
-            for c in r["cells"]:
-                if c is None:
-                    cells.append("<td></td>")
-                    continue
-                w, l, t = c
-                cls = "gw" if w > l else "gl" if l > w else "gt"
-                cells.append(f'<td class="{cls}">{w}–{l}{f"–{t}" if t else ""}</td>')
-            rows.append(f'<tr><td>{e(r["team"])} <span class="lbl">{e(r["abbr"])}</span></td>{"".join(cells)}</tr>')
-        h2h_html = section("Head to head", f'<table class="grid"><tr><th>Team</th>{head}</tr>{"".join(rows)}</table>',
-                           "Each row team's matchup record against each opponent.", "h2h")
-
-    allplay_html = ""
-    if data["allplay"]:
-        ap = "".join(f'<tr><td>{e(r["team"])}</td><td>{r["mw"]}–{r["ml"]}–{r["mt"]}</td><td>{r["allplay_pct"]:.3f}</td>'
-                     f'<td>{r["actual_pct"]:.3f}</td><td class="{"pos" if r["luck"] > 0 else "neg" if r["luck"] < 0 else ""}">'
-                     f'{100 * r["luck"]:+.1f}</td></tr>' for r in data["allplay"])
-        allplay_html = section("All-play record and luck",
-                               f'<table><tr><th>Team</th><th>All-play W–L–T</th><th>All-play cat pct</th><th>Actual cat pct</th>'
-                               f'<th>Luck</th></tr>{ap}</table>',
-                               "All-play: every team against every other team, every finished week. Luck: actual category "
-                               "win percentage minus all-play, in points. Positive means your schedule has been kind.", "allplay")
-
-    records_html = ""
-    if data.get("records"):
-        rr = "".join(f'<tr><td>{e(r["what"])}</td><td class="l">{e(r["team"])}</td><td>{e(r["value"])}</td><td>{r["week"]}</td></tr>'
-                     for r in data["records"])
-        records_html = section("League records", f'<table><tr><th>Record</th><th class="l">Team</th><th>Value</th><th>Matchup</th></tr>{rr}</table>',
-                               "Best single matchups so far. Percentages need at least 75% of the league's average attempts; "
-                               "counting stats leave out the two-week All-Star matchup.", "records")
-
-    def players_table(rows, title, sid, note):
-        if not rows:
-            return ""
-        tr = "".join(f'<tr><td>{e(r["player"])}</td><td class="l">{e(r["team"])}</td><td>{r["g"]}</td>'
-                     f'<td class="{"pos" if (r["pct"] or 0) > 0 else "neg"}">{"—" if r["pct"] is None else f"{100 * r['pct']:+.0f}%"}</td>'
-                     f'<td class="l">{e(r["line"])}</td></tr>' for r in rows)
-        return section(title, f'<table><tr><th>Player</th><th class="l">Fantasy team</th><th>G</th><th>vs expected</th>'
-                              f'<th class="l">Line</th></tr>{tr}</table>', note, sid)
-
-    how = ("vs expected: 9-category production against what the model expected from the same number of games. "
-           "Ranked by the size of the gap, so a big game from a big role outranks a big percentage from a small one. "
-           "Rostered players, games through last night.")
-    top_html = players_table(data["top"], "Best performers this week", "top", how)
-    worst_html = players_table(data.get("worst") or [], "Worst performers this week", "worst",
-                               how + " Below −100%: turnovers and missed shots outweighed everything else.")
-
-    last_html = ""
-    if data["last"]:
-        lr = []
-        for r in data["last"]["rows"]:
-            p = r["p_home"]
-            odds = "—" if p is None else f"{p:.0%} / {1 - p:.0%}"
-            win = "Tie" if r["tie"] else (r["home"] if r["home_won"] else r["away"])
-            fav_won = p is not None and not r["tie"] and ((p >= 0.5) == r["home_won"])
-            lr.append(f'<tr><td>{e(r["home"])} vs {e(r["away"])}</td><td>{odds}</td><td>{r["score"][0]}–{r["score"][1]}–{r["score"][2]}</td>'
-                      f'<td class="l">{e(win)}{"" if p is None else (" ✓" if fav_won else " (upset)")}</td></tr>')
-        last_html = section(f'Matchup {data["last"]["period"]}: odds against results',
-                            f'<table><tr><th>Matchup</th><th>Odds at first update</th><th>Final</th><th class="l">Winner</th></tr>'
-                            f'{"".join(lr)}</table>', sid="odds")
-
-    score_html = ""
-    sc = data.get("scorecard")
-    if sc:
-        tiles = [("Favorites", f'{sc["fav"][0]}–{sc["fav"][1]}', "won–lost, ties left out"),
-                 ("Strong favorites", f'{sc["big"][0]}–{sc["big"][1]}', "75% or more"),
-                 ("Brier score", f'{sc["brier"]:.3f}', "coin flip .250 · lower is better"),
-                 ("Avg. confidence", f'{sc["conf"]:.0%}', f'in the favorite, {sc["n"]} matchups')]
-        score_html = (f'<section id="{"" if last_html else "odds"}" style="display:grid;gap:14px"><h2>How the odds have done</h2><div class="tiles">' +
-                      "".join(f'<div class="card tile"><div class="lbl">{a}</div><div class="big">{b}</div><div class="meta">{c}</div></div>'
-                              for a, b, c in tiles) +
-                      '</div><p class="note">Every finished matchup, scored on the odds at its first update of the week.</p></section>')
-
-    moves_html = ""
-    if data.get("moves"):
-        mv = []
-        for r in data["moves"]:
-            if r["kind"] == "trade":
-                mv.append(f'<tr><td>{e(r["when"])}</td><td class="l">Trade</td><td class="who" colspan="2">{e(r["add"])}</td></tr>')
-            else:
-                mv.append(f'<tr><td>{e(r["when"])}</td><td class="l">{e(r["team"])} <span class="lbl">· {e(r["kind"])}</span></td>'
-                          f'<td class="l">{e(r["add"]) or "—"}</td><td class="l">{e(r["drop"]) or "—"}</td></tr>')
-        moves_html = section("Recent moves", f'<table><tr><th>When</th><th class="l">Team</th><th class="l">Added</th>'
-                             f'<th class="l">Dropped</th></tr>{"".join(mv)}</table>', "Executed adds, drops and trades from the last 7 days.", "moves")
-
-    awards_html = ""
-    aw = data.get("awards")
-    if aw:
-        awards_html = (f'<section id="awards" style="display:grid;gap:14px"><h2>Matchup {aw["period"]} awards</h2><div class="tiles">' +
-                       "".join(f'<div class="card tile award"><div class="lbl">{e(a["title"])}</div><div class="big">{e(a["team"])}</div>'
-                               f'<div class="meta">{e(a["text"])}</div></div>' for a in aw["items"]) + '</div></section>')
-
-    ranks_html = ""
-    rk = data.get("ranks")
-    if rk:
-        n = rk["n"]
-
-        def heat(r):
-            x = (n - r) / (n - 1) if n > 1 else 0.5          # 1 for first, 0 for last
-            col, amt = ("--good", (x - 0.5) * 2) if x >= 0.5 else ("--bad", (0.5 - x) * 2)
-            return f'background: color-mix(in srgb, var({col}) {6 + 34 * amt:.0f}%, transparent)'
-        head = "".join(f"<th>{c}</th>" for c in CATS)
-        rows = "".join(f'<tr><td>{e(r["team"])}</td>' + "".join(f'<td class="rk" style="{heat(k)}" title="{e(v)}">{k}</td>'
-                                                               for k, v in zip(r["ranks"], r["shown"])) +
-                       f'<td>{r["avg"]:.1f}</td></tr>' for r in rk["rows"])
-        ranks_html = section("Category ranks", f'<table class="grid"><tr><th>Team</th>{head}<th>Avg</th></tr>{rows}</table>',
-                             "Season rank in each category over finished matchups (1 is best; fewest turnovers ranks first). "
-                             "Hover or long-press a cell for the season figure.", "ranks")
-
-    activity_html = ""
-    if data.get("activity"):
-        ac = "".join(f'<tr><td>{e(r["team"])}</td><td>{r["adds"]}</td><td>{r["drops"]}</td><td>{r["trades"]}</td></tr>'
-                     for r in data["activity"])
-        activity_html = section("Most active managers", f'<table><tr><th>Team</th><th>Adds</th><th>Drops</th><th>Trades</th>'
-                                f'</tr>{ac}</table>', "Since the draft, from ESPN's transaction log.", "activity")
-
-    later = "" if finished else ('<p class="note">After the first matchup is final, this page adds standings, week-by-week '
-                                 'results, head-to-head records, all-play and luck, league records, and a running scorecard '
-                                 'for the odds.</p>')
-    fill = {"period": str(data["period"]), "dates": e(data["dates"]), "updated": e(data["updated"]), "headline": headline,
-            "v": e(str(data.get("v", ""))), "ts": str(int(data.get("ts", 0))), "live_url": LIVE_URL, "poll_ms": str(POLL_MS),
-            "cards": "\n  ".join(card(gm, data["start"], data["end"]) for gm in data["games"]), "today": today,
-            "standings": standings_html, "grid": grid_html, "h2h": h2h_html, "allplay": allplay_html,
-            "records": records_html, "top": top_html, "worst": worst_html, "last": last_html, "scorecard": score_html, "moves": moves_html,
-            "later": later, "awards": awards_html, "ranks": ranks_html, "activity": activity_html}
-    present = {k for k in ("today", "awards", "standings", "weeks", "ranks", "h2h", "allplay", "records", "top", "worst", "odds",
-                           "moves", "activity") if f'id="{k}"' in "".join(fill.values())} | {"matchups"}
-    fill["nav"] = ('<nav class="jump" aria-label="Sections">' +
-                   "".join(f'<a href="#{k}">{lbl}</a>' for k, lbl in NAV if k in present) + "</nav>")
-    page = PAGE
-    for k, v in fill.items():
-        page = page.replace(f"%({k})s", v)
-    return page
+APP_JS = Path(__file__).parent / "web" / "app.js"
+INSIGHTS = Path(__file__).parent / "web" / "insights.html"
 
 
-def public_json(data):
-    return {k: data[k] for k in ("period", "dates", "updated", "v", "ts")} | {
-        "games": [{k: gm[k] for k in ("home", "away", "p_home", "score")} for gm in data["games"]]}
+def site_files(state=None):
+    """{path: text} for a copy of the site: the page, the app, the insights page, and the state if given."""
+    files = {"index.html": shell(), "app.js": APP_JS.read_text()}
+    if INSIGHTS.exists():
+        files["insights.html"] = INSIGHTS.read_text()
+    if state is not None:
+        files["api/state.json"] = json.dumps(state, separators=(",", ":"))
+    return files
 
 
 if __name__ == "__main__":
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "public_page")
-    out.mkdir(parents=True, exist_ok=True)
     import live_server as S
     lv = LV.Live()
     try:
@@ -1192,6 +903,7 @@ if __name__ == "__main__":
         tx = S.transactions(lv.live["latest_scoring_period"])
     except Exception:
         tx = None
-    data = build(lv, history={}, sb=sb, tx=tx)
-    (out / "index.html").write_text(render(data))
-    print("wrote", out / "index.html")
+    for name, text in site_files(api_state(build(lv, history={}, sb=sb, tx=tx))).items():
+        (out / name).parent.mkdir(parents=True, exist_ok=True)
+        (out / name).write_text(text)
+    print("wrote", out, "(open index.html through a local web server; set window.CG_API = '' to use this copy's state)")

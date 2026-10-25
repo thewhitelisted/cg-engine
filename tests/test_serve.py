@@ -107,8 +107,7 @@ class TickTest(unittest.TestCase):
             (serve.sync, "normalize"): lambda j: league(self.lineups),
             (serve.LV, "Live"): mock.Mock(side_effect=lambda **kw: mock.Mock(period=1)),
             (serve.LP, "build"): self.build,
-            (serve.LP, "render"): lambda data: f"<html>{data['v']}</html>",
-            (serve.LP, "public_json"): lambda data: {"v": data["v"]},
+            (serve.LP, "api_state"): lambda data: {"v": data["content"], "ts": 0, "updated": "now", "games": []},
         }
         for (mod, name), fn in stubs.items():
             p = mock.patch.object(mod, name, fn)
@@ -125,11 +124,15 @@ class TickTest(unittest.TestCase):
             history.setdefault("trend", {}).setdefault("1", []).append(["now", {}])
         return {"games": [], "content": self.content, "updated": "now", "v": self.content, "ts": 0}
 
-    def test_first_tick_builds_and_writes(self):
+    def state_file(self):
+        return json.loads((self.out / "api" / "state.json").read_text())
+
+    def test_first_tick_builds_writes_and_pushes(self):
+        q, _ = self.pub.hub.join()
         what = self.pub.tick()
         self.assertTrue(what.startswith("full refresh"))
-        self.assertEqual((self.out / "data.json").read_text(), '{"v": "a"}')
-        self.assertEqual((self.out / "index.html").read_text(), "<html>a</html>")
+        self.assertEqual(self.state_file()["v"], "a")
+        self.assertEqual(q.get_nowait()[:1], ("state",))                 # the first publish is the whole state
 
     def test_nothing_changed_skips_the_model(self):
         self.pub.tick()
@@ -141,18 +144,21 @@ class TickTest(unittest.TestCase):
         lv = self.pub.lv
         self.score = 1
         self.content = "b"
+        q, _ = self.pub.hub.join()
         self.assertTrue(self.pub.tick().startswith("live refresh"))
         self.assertIs(self.pub.lv, lv)                                     # same model, updated in place
         lv.update.assert_called_once()
-        self.assertEqual((self.out / "data.json").read_text(), '{"v": "b"}')
+        self.assertEqual(self.state_file()["v"], "b")
+        ev, data, eid = q.get_nowait()
+        self.assertEqual((ev, json.loads(data)["from"], eid), ("patch", "a", "b"))   # open pages get a patch
 
     def test_same_page_is_not_rewritten(self):
         self.pub.tick()
-        before = (self.out / "data.json").stat().st_mtime_ns
+        before = (self.out / "api" / "state.json").stat().st_mtime_ns
         self.score = 1                                               # inputs moved, page didn't
         self.assertIsNone(self.pub.tick())
         self.assertEqual(len(self.built), 2)
-        self.assertEqual((self.out / "data.json").stat().st_mtime_ns, before)
+        self.assertEqual((self.out / "api" / "state.json").stat().st_mtime_ns, before)
 
     def test_lineup_change_forces_a_full_refresh_after_the_gap(self):
         self.pub.tick()
@@ -213,16 +219,35 @@ class ArchiveTest(unittest.TestCase):
         self.assertEqual(pub.lv.locks, serve.LV.LINEUP_LOCKS)             # the published rule is back on
 
 
-class ForceSnapshotTest(unittest.TestCase):
-    def test_new_code_forces_the_next_snapshot(self):
-        d = Path(tempfile.mkdtemp())
-        with mock.patch.object(serve, "STATE", d / "state.json"):
-            pub = serve.Publisher(d / "out", dry_run=True)
-            pub.dry = False
-            pub.state.update(snapshot_at=time.time(), snapshot_key="k")
-            pub.force_snapshot()
-            saved = json.loads((d / "state.json").read_text())
-        self.assertEqual((saved["snapshot_at"], saved["snapshot_key"]), (0, None))
+class SiteTest(unittest.TestCase):
+    def git(self, cwd, *args):
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd, check=True,
+                              capture_output=True, text=True)
+
+    def test_install_site_writes_the_app_and_drops_the_old_page(self):
+        out = Path(tempfile.mkdtemp())
+        (out / "data.json").write_text("{}")
+        serve.Publisher(out, dry_run=True).install_site()
+        self.assertFalse((out / "data.json").exists())
+        self.assertEqual(sorted(p.name for p in out.iterdir() if p.is_file()), ["app.js", "index.html", "insights.html"])
+        self.assertIn('src="app.js"', (out / "index.html").read_text())
+
+    def test_publish_site_commits_code_only_when_it_changed(self):
+        root = Path(tempfile.mkdtemp())
+        up, repo = root / "up.git", root / "page"
+        self.git(root, "init", "-q", "--bare", "-b", "main", str(up))
+        self.git(root, "clone", "-q", str(up), str(repo))
+        for name in ("index.html", "data.json", "history.json", ".content_key"):     # the old server-rendered copy
+            (repo / name).write_text("old")
+        self.git(repo, "add", ".")
+        self.git(repo, "commit", "-qm", "old page")
+        self.git(repo, "push", "-q", "origin", "HEAD:main")
+        files = {"index.html": "<shell>", "app.js": "app"}
+        self.assertTrue(serve.publish_site(repo, files, "Site: page code"))
+        tree = self.git(repo, "ls-tree", "--name-only", "origin/main").stdout.split()
+        self.assertEqual(sorted(tree), ["app.js", "index.html"])                     # old data files gone
+        self.assertFalse(serve.publish_site(repo, files, "Site: page code"))         # unchanged: no commit
+        self.assertEqual(self.git(repo, "rev-list", "--count", "origin/main").stdout.strip(), "2")
 
 
 class AlertTest(unittest.TestCase):

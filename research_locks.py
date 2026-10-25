@@ -51,7 +51,11 @@ def git(repo, *args):
 
 # ---------------------------------------------------------------- the chart and the published pages
 def chart_points(page):
-    tr = json.loads((Path(page) / "history.json").read_text())["trend"][str(PERIOD)]
+    """The odds-history chart: the server's copy (data/odds_history.json, from 2026-10-25), else the old page copy's."""
+    src = M.DATA / "odds_history.json"
+    if not src.exists() or str(PERIOD) not in json.loads(src.read_text()).get("trend", {}):
+        src = Path(page) / "history.json"
+    tr = json.loads(src.read_text())["trend"][str(PERIOD)]
     pts = [(pd.Timestamp(t, tz=ET), odds) for t, odds in tr]
     return [(t, o) for t, o in pts if t >= START]
 

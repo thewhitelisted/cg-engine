@@ -41,7 +41,8 @@ def hand_off():
         print(f"handoff failed ({type(e).__name__}: {e}); the schedule will have to pick it up")
 
 
-LOGS = ["data/status_log.csv", "data/lineup_log.csv", "data/replay"]   # replay: serve.py's chart-point inputs
+LOGS = ["data/status_log.csv", "data/lineup_log.csv", "data/replay",     # replay: serve.py's chart-point inputs
+        "data/odds_history.json"]                                         # the odds-history chart
 
 
 def save_status_log():

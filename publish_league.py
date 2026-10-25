@@ -1,12 +1,14 @@
-"""Refresh the public league page and push it to its GitHub Pages repo (cg-engine runs it every 10 min during games).
+"""Fallback publisher: writes a copy of the site (page, app, api/state.json) to the GitHub Pages repo and pushes it.
 
-    python3 publish_league.py              # sync ESPN, rebuild the page, commit + push if the odds changed
+The server (serve.py) normally publishes; this runs from the GitHub Actions workflow (manual) while the server is down.
+The page then finds the live API unreachable and reads this copy's api/state.json instead.
+
+    python3 publish_league.py              # sync ESPN, compute the odds, commit + push if the page changed
 
 Config: data/publish.json  {"repo_dir": "/path/to/local/clone/of/the/pages/repo"}
 Needs data/espn_auth.json (ESPN cookies) and working git credentials for the push.
 """
 import json
-import subprocess
 import sys
 import traceback
 from datetime import datetime
@@ -17,11 +19,12 @@ import league_page as LP
 import live as LV
 import live_server as S
 import model as M
+import serve
 import status_log
 import sync
 
 LOG = M.DATA / "publish.log"
-INSIGHTS = Path(__file__).parent / "web" / "insights.html"     # static explainer page, linked from the footer
+HISTORY = serve.HISTORY
 
 
 def log(msg):
@@ -29,10 +32,6 @@ def log(msg):
     print(line)
     with LOG.open("a") as f:
         f.write(line + "\n")
-
-
-def git(repo, *args):
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=120)
 
 
 def main():
@@ -57,43 +56,30 @@ def main():
     except Exception:
         sb = frac = None
     try:
-        tx = S.transactions(live["latest_scoring_period"], back=3)   # earlier moves are already counted in history.json
+        tx = S.transactions(live["latest_scoring_period"], back=3)   # earlier moves are already counted in the history
     except Exception as e:
         log(f"transactions unavailable: {type(e).__name__}: {e}")
         tx = None
     lv = LV.Live(live=live, today_frac=frac, lg=I.load_league(), started=LV.started_teams(sb))
+    history = {}
+    for path in (HISTORY, Path(repo) / "history.json"):               # the server's odds history; the old page copy's
+        try:
+            history = json.loads(path.read_text())
+            break
+        except Exception:
+            pass
+    state = LP.api_state(LP.build(lv, history, sb=sb, tx=tx))
     try:
-        history = json.loads(open(f"{repo}/history.json").read())
+        old = json.loads((Path(repo) / "api" / "state.json").read_text()).get("v")
     except Exception:
-        history = {}
-    data = LP.build(lv, history, sb=sb, tx=tx)
-    key = LP.content_key(data)
-    try:
-        old = open(f"{repo}/.content_key").read()
-    except Exception:
-        old = ""
-    insights = INSIGHTS.read_text() if INSIGHTS.exists() else None
-    try:
-        old_insights = open(f"{repo}/insights.html").read()
-    except Exception:
-        old_insights = None
-    if key == old and insights == old_insights:
+        old = None
+    HISTORY.write_text(json.dumps(history))                             # committed with the logs (loop.py)
+    page = Path(repo) / "index.html"
+    if state["v"] == old and page.exists() and page.read_text() == LP.shell():
         log("page content unchanged; nothing to push")
         return
-    if insights is not None:
-        open(f"{repo}/insights.html", "w").write(insights)
-    open(f"{repo}/index.html", "w").write(LP.render(data))
-    open(f"{repo}/data.json", "w").write(json.dumps(LP.public_json(data)))
-    open(f"{repo}/history.json", "w").write(json.dumps(history))
-    open(f"{repo}/.content_key", "w").write(key)
-    git(repo, "pull", "--rebase", "--quiet")
-    git(repo, "add", "index.html", "data.json", "history.json", ".content_key", "insights.html")
-    c = git(repo, "commit", "-m", f"Update odds {data['updated']}")
-    p = git(repo, "push", "--quiet")
-    if p.returncode != 0:
-        log(f"push failed: {p.stderr.strip()[:300]}")
-        sys.exit(1)
-    log(f"published matchup {data['period']}: " + "; ".join(f"{g['home'][:12]} {g['p_home']:.0%}" for g in data["games"]))
+    if serve.publish_site(Path(repo), LP.site_files(state), f"Update odds {state['updated']}"):
+        log(f"published matchup {state['period']}: " + "; ".join(f"{g['home'][:12]} {g['p_home']:.0%}" for g in state["games"]))
 
 
 if __name__ == "__main__":

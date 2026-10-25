@@ -1,8 +1,9 @@
-"""Live publisher for this server: keeps the public page's live copy current, around the clock, without commits.
+"""Live publisher for this server: computes the league page's odds around the clock and serves them as a JSON API.
 
 Every TICK seconds it asks ESPN whether the league's live scores changed (If-None-Match: an unchanged answer costs
-nothing) and reads the NBA scoreboard. When either changed it recomputes the odds and writes index.html and data.json
-into OUT, which Caddy serves at league_page.LIVE_URL; the page polls that copy every league_page.POLL_MS.
+nothing) and reads the NBA scoreboard. When either changed it recomputes the odds; when what the page shows changed it
+writes api/state.json into OUT and pushes a patch to every open page over api/events (api.py). Caddy serves OUT
+(the page, web/app.js, the state) and proxies api/events to API_PORT; see server/install.sh.
 
     live refresh   new scores and game clocks on the model already built (about 0.2 s)
     full refresh   rosters, lineups, records, transactions and injury statuses, then the model rebuilt (about 3 s):
@@ -10,14 +11,15 @@ into OUT, which Caddy serves at league_page.LIVE_URL; the page polls that copy e
                    player's injury status that differs from ours
 
 At every odds-history chart point it appends the exact model inputs and both lineup rules' odds (L4 and K1,
-DECISIONS.md 2026-10-25) to data/replay/<date>.jsonl, so later weeks can be scored exactly.
-Every SNAPSHOT_EVERY, if the page changed, it commits a copy to the GitHub Pages repo (what the page shows when this
-server doesn't answer) and the status/lineup/replay logs to this repo. Every CODE_EVERY it pulls main and restarts itself if
-code changed, so pushes to main go live as they did with loop.py. When ticks keep failing for ALERT_AFTER (or page
-snapshots fail for longer), it opens an issue in this repo, which GitHub emails, and closes it once things recover.
+DECISIONS.md 2026-10-25) to data/replay/<date>.jsonl. Every LOGS_EVERY it commits the status, lineup and replay logs
+and the odds history to this repo. On start it puts the current page code into OUT and into the GitHub Pages copy (a
+commit only when the code changed; data is never committed there). Every CODE_EVERY it pulls main and restarts if code
+changed, so pushes to main go live. When ticks keep failing for ALERT_AFTER it opens an issue in this repo, which
+GitHub emails, and closes it once things recover.
 
-    python serve.py                                   # under systemd: server/cg-live.service
-    python serve.py --dry-run --once --out DIR        # one tick into DIR: no pushes, logs, state or issues
+    python serve.py                                         # under systemd: server/cg-live.service
+    python serve.py --dry-run --once --out DIR              # one tick into DIR: no pushes, logs, state or issues
+    python serve.py --dry-run --out DIR --serve-static      # local preview: http://127.0.0.1:8787/ serves DIR too
 """
 import argparse
 import json
@@ -31,6 +33,7 @@ from pathlib import Path
 
 import requests
 
+import api
 import inseason as I
 import league_page as LP
 import live as LV
@@ -42,13 +45,15 @@ import sync
 
 TICK = 10
 FULL_EVERY, MIN_FULL_GAP = 300, 60
-SNAPSHOT_EVERY, SNAPSHOT_RETRY = 3600, 300
+LOGS_EVERY, LOGS_RETRY = 3600, 300
 CODE_EVERY = 120
-ALERT_AFTER = {"tick": 300, "snapshot": 900}
+ALERT_AFTER = {"tick": 300, "logs": 900, "site": 900}
 OUT = Path("/srv/cg-live")
+API_PORT = 8787
 STATE = M.DATA / "serve_state.json"
+HISTORY = M.DATA / "odds_history.json"         # the odds-history chart, committed with the logs
 REPLAY_DIR = M.DATA / "replay"
-INSIGHTS = Path(__file__).parent / "web" / "insights.html"
+LEGACY = ("data.json", "history.json", ".content_key")   # the server-rendered page's files, retired 2026-10-25
 ISSUES_REPO = "thewhitelisted/cg-engine"
 UV = Path.home() / ".local" / "bin" / "uv"
 LIVE_VIEWS = ["mMatchupScore", "mScoreboard", "mStatus"]   # live totals, lineups, statuses: about 450 KB when changed
@@ -101,6 +106,7 @@ def lineups_differ(live_lineups, lg):
 
 
 def write_atomic(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(text)
     os.replace(tmp, path)
@@ -154,21 +160,58 @@ class Alert:
             log(f"alert failed to open: {r.stderr.strip()[:200]}")
 
 
+def git_in(repo, *args):
+    return subprocess.run(["git", "-C", str(repo), "-c", "user.name=cg-engine",
+                           "-c", "user.email=cg-engine@users.noreply.github.com", *args],
+                          capture_output=True, text=True, timeout=120)
+
+
+def publish_site(repo, files, message):
+    """Write files into the GitHub Pages copy, remove the retired ones, and push if anything changed; returns whether
+    it pushed."""
+    for name, text in files.items():
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_text(text)
+    gone = [n for n in LEGACY if (repo / n).exists()]
+    if gone:
+        git_in(repo, "rm", "-q", "--ignore-unmatch", *gone)
+    git_in(repo, "add", *files)
+    if git_in(repo, "diff", "--cached", "--quiet").returncode == 0:
+        return False
+    git_in(repo, "commit", "-q", "-m", message)
+    if git_in(repo, "pull", "-q", "--rebase", "-X", "theirs").returncode != 0:      # conflicts: this copy wins
+        git_in(repo, "rebase", "--abort")
+        raise RuntimeError("page repo pull failed")
+    p = git_in(repo, "push", "-q")
+    if p.returncode != 0:
+        raise RuntimeError(f"page push failed: {p.stderr.strip()[:300]}")
+    return True
+
+
 class Publisher:
-    def __init__(self, out, dry_run=False):
+    def __init__(self, out, dry_run=False, hub=None):
         self.out, self.dry = out, dry_run
+        self.hub = hub or api.Hub()
         self.session = requests.Session()
         self.live_feed, self.full_feed = Feed(self.session, LIVE_VIEWS), Feed(self.session, FULL_VIEWS)
-        self.lg = self.lv = self.tx = self.data = None
-        self.full_at, self.rebuild, self.inputs, self.key = 0.0, True, None, None
+        self.lg = self.lv = self.tx = self.data = self.published = None
+        self.full_at, self.rebuild, self.inputs = 0.0, True, None
         self.state = {} if dry_run else load_state()
         history = self.state.get("history")
-        if history is None:
-            try:
-                history = json.loads((page_repo() / "history.json").read_text())
-            except Exception:
-                history = {}
-        self.history = history
+        for path in (HISTORY, None):
+            if history is None:
+                try:
+                    history = json.loads((path or page_repo() / "history.json").read_text())
+                except Exception:
+                    pass
+        self.history = history or {}
+
+    def install_site(self):
+        """The page code into OUT (Caddy serves it): page, app and insights; the retired files go."""
+        for name in LEGACY:
+            (self.out / name).unlink(missing_ok=True)
+        for name, text in LP.site_files().items():
+            write_atomic(self.out / name, text)
 
     def save(self):
         if not self.dry:
@@ -222,15 +265,15 @@ class Publisher:
         if len((self.history.get("trend") or {}).get(str(live["period"]), [])) > trend:   # a new chart point
             self.archive(live, frac, started, slots)
         self.inputs = inputs
-        key = LP.content_key(data)
-        if key == self.key:
-            return None
-        self.out.mkdir(parents=True, exist_ok=True)
-        write_atomic(self.out / "index.html", LP.render(data))          # the page reads data.json first, so it goes last
-        write_atomic(self.out / "data.json", json.dumps(LP.public_json(data)))
-        self.data, self.key = data, key
+        state = LP.api_state(data)
+        if self.published is not None and state["v"] == self.published["v"]:
+            return None                                                  # nothing the page shows has changed
+        write_atomic(self.out / "api" / "state.json", json.dumps(state, separators=(",", ":")))
+        msg = self.hub.publish(state)
+        self.data, self.published = data, state
         self.save()
-        return f"{what} refresh, published {data['v']}: " + "; ".join(f"{g['home'][:12]} {g['p_home']:.0%}" for g in data["games"])
+        return (f"{what} refresh, published {state['v']} ({len(msg[1])} B {msg[0]} to {self.hub.count()} open): "
+                + "; ".join(f"{g['home'][:12]} {g['p_home']:.0%}" for g in state["games"]))
 
     def archive(self, live, frac, started, slots):
         """Append this chart point's inputs and both lineup rules' odds (shadow: only one is published)."""
@@ -252,41 +295,11 @@ class Publisher:
                 f.write(json.dumps(rec, default=str) + "\n")
         return rec
 
-    def force_snapshot(self):
-        """Push the page to GitHub on the next round even if the numbers haven't changed (new page code must reach
-        the copy visitors load first)."""
-        self.state["snapshot_at"], self.state["snapshot_key"] = 0, None
-        self.save()
-
-    def snapshot(self):
-        """Commit the current page to the GitHub Pages repo (the page's fallback) if it changed since the last one,
-        then commit this repo's status and lineup logs."""
-        if self.data is not None and self.key != self.state.get("snapshot_key"):
-            repo = page_repo()
-            files = {"index.html": LP.render(self.data), "data.json": json.dumps(LP.public_json(self.data)),
-                     "history.json": json.dumps(self.history), ".content_key": self.key}
-            if INSIGHTS.exists():
-                files["insights.html"] = INSIGHTS.read_text()
-            for name, text in files.items():
-                (repo / name).write_text(text)
-
-            def git(*args):
-                return subprocess.run(["git", "-C", str(repo), "-c", "user.name=cg-engine",
-                                       "-c", "user.email=cg-engine@users.noreply.github.com", *args],
-                                      capture_output=True, text=True, timeout=120)
-            git("add", *files)
-            if git("diff", "--cached", "--quiet").returncode != 0:
-                git("commit", "-q", "-m", f"Update odds {self.data['updated']}")
-            if git("pull", "-q", "--rebase", "-X", "theirs").returncode != 0:      # conflicts: this snapshot wins
-                git("rebase", "--abort")
-                raise RuntimeError("page repo pull failed")
-            p = git("push", "-q")
-            if p.returncode != 0:
-                raise RuntimeError(f"page push failed: {p.stderr.strip()[:300]}")
-            self.state["snapshot_key"] = self.key
-            log(f"page snapshot pushed ({self.data['updated']})")
+    def commit_logs(self):
+        """Commit the status, lineup and replay logs and the odds history to this repo."""
+        write_atomic(HISTORY, json.dumps(self.history))
         loop.save_status_log()
-        self.state["snapshot_at"] = time.time()
+        self.state["logs_at"] = time.time()
         self.save()
 
 
@@ -316,12 +329,25 @@ def main():
     ap.add_argument("--out", type=Path, default=OUT, help=f"folder Caddy serves (default {OUT})")
     ap.add_argument("--dry-run", action="store_true", help="write OUT only: no pushes, logs, state, code updates or issues")
     ap.add_argument("--once", action="store_true", help="one tick, then exit")
+    ap.add_argument("--api-port", type=int, default=API_PORT, help="port for api/events on 127.0.0.1 (0: no stream)")
+    ap.add_argument("--serve-static", action="store_true", help="local preview: the API port also serves OUT")
     args = ap.parse_args()
     os.chdir(Path(__file__).parent)
     pub = Publisher(args.out, args.dry_run)
     alert = Alert(pub.state, pub.save, enabled=not args.dry_run)
+    pub.install_site()
+    if args.api_port:
+        api.start(pub.hub, port=args.api_port, static=args.out if args.serve_static else None)
+    if not args.dry_run:
+        try:
+            if publish_site(page_repo(), LP.site_files(), "Site: page code"):
+                log("page code pushed to the GitHub copy")
+            alert.update("site", True)
+        except Exception as e:
+            log(f"site publish failed: {type(e).__name__}: {e}")
+            alert.update("site", False, traceback.format_exc())
     code_at = time.time()
-    log(f"serving {args.out} every {TICK}s{' (dry run)' if args.dry_run else ''}")
+    log(f"serving {args.out} every {TICK}s, events on :{args.api_port}{' (dry run)' if args.dry_run else ''}")
     while True:
         t0 = time.time()
         try:
@@ -332,19 +358,18 @@ def main():
         except Exception as e:
             log(f"tick failed: {type(e).__name__}: {e}")
             alert.update("tick", False, traceback.format_exc())
-        if not args.dry_run and time.time() - pub.state.get("snapshot_at", 0) >= SNAPSHOT_EVERY:
+        if not args.dry_run and time.time() - pub.state.get("logs_at", 0) >= LOGS_EVERY:
             try:
-                pub.snapshot()
-                alert.update("snapshot", True)
+                pub.commit_logs()
+                alert.update("logs", True)
             except Exception as e:
-                log(f"snapshot failed: {type(e).__name__}: {e}")
-                pub.state["snapshot_at"] = time.time() - SNAPSHOT_EVERY + SNAPSHOT_RETRY
-                alert.update("snapshot", False, traceback.format_exc())
+                log(f"log commit failed: {type(e).__name__}: {e}")
+                pub.state["logs_at"] = time.time() - LOGS_EVERY + LOGS_RETRY
+                alert.update("logs", False, traceback.format_exc())
         if not args.dry_run and time.time() - code_at >= CODE_EVERY:
             code_at = time.time()
             try:
                 if code_changed():
-                    pub.force_snapshot()
                     os.execv(sys.executable, [sys.executable, *sys.argv])
             except Exception as e:
                 log(f"code update failed: {type(e).__name__}: {e}")
