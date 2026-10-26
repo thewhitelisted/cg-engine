@@ -232,6 +232,10 @@ class Publisher:
                 statuses.update({e[0]: e[3] for t in lg["teams"] for e in t["roster"]})
             status_log.record(statuses)
             status_log.record_lineups(lg, live["latest_scoring_period"])
+            try:
+                status_log.record_returns(S.injury_returns())     # DECISIONS.md E1
+            except Exception as e:
+                log(f"injury list unavailable: {type(e).__name__}: {e}")
         self.lg, self.full_at, self.rebuild = lg, time.time(), True
 
     def tick(self):

@@ -45,6 +45,10 @@ def main():
     n = status_log.record(statuses)
     if n:
         log(f"status log: {n} change{'s' if n != 1 else ''}")
+    try:
+        status_log.record_returns(S.injury_returns())         # DECISIONS.md E1
+    except Exception as e:
+        log(f"injury list unavailable: {type(e).__name__}: {e}")
     live, _, _ = S.live_from(S.espn(["mMatchupScore", "mScoreboard", "mStatus"]))
     (M.DATA / "live.json").write_text(json.dumps(live))
     n = status_log.record_lineups(lg, live["latest_scoring_period"])

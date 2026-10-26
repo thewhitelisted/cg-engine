@@ -42,7 +42,8 @@ def hand_off():
 
 
 LOGS = ["data/status_log.csv", "data/lineup_log.csv", "data/replay",     # replay: serve.py's chart-point inputs
-        "data/odds_history.json"]                                         # the odds-history chart
+        "data/odds_history.json",                                         # the odds-history chart
+        "data/return_log.csv"]                                            # ESPN's expected returns (DECISIONS.md E1)
 
 
 def save_status_log():

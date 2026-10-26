@@ -10,6 +10,7 @@ Mac notifications: when your chance to win the week moves by 8+ points, when a c
 side of 50%, and a summary once the night's games are final.
 """
 import json
+import re
 import subprocess
 import threading
 import time
@@ -70,6 +71,22 @@ def transactions(sp_now, back=8):
 
 
 NEVER_STARTED = ("STATUS_POSTPONED", "STATUS_CANCELED")
+INJURIES = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries"
+
+
+def injury_returns():
+    """ESPN's NBA injury list: {player_id: (status, expected return date "YYYY-MM-DD" or "")} (DECISIONS.md E1). Player
+    ids are ESPN's (the fantasy ids); statuses as in status_log (OUT, DAY_TO_DAY, ...)."""
+    r = requests.get(INJURIES, timeout=20)
+    r.raise_for_status()
+    out = {}
+    for team in r.json().get("injuries", []):
+        for it in team.get("injuries", []):
+            m = re.search(r"/id/(\d+)", (((it.get("athlete") or {}).get("links") or [{}])[0]).get("href", ""))
+            if m:
+                status = str(it.get("status") or "").upper().replace("-", "_").replace(" ", "_")
+                out[int(m[1])] = (status, (it.get("details") or {}).get("returnDate") or "")
+    return out
 
 
 def scoreboard(day: datetime, now=None):
