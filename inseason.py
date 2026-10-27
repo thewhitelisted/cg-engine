@@ -255,19 +255,27 @@ def build(season, lg, g, today=None):
     share, A, info = availability(season, g, status, weeks_left, G)
     season.df["avail"] = np.clip(share, 0, 1)
     irs = np.full((12, N_IR), -2, int)
-    Geff = G * A
     val, _ = M.static_value(season.df)
     for s, tid in enumerate(tids):
         ir_idx = [idx[e[0]] for e in ir.get(tid, []) if e[0] in idx][:N_IR]
         irs[s, : len(ir_idx)] = ir_idx
-        active = [p for p in rost[s] if p >= 0]
-        weakest = sorted(active, key=lambda p: val[p])
-        for q, p_ir in enumerate(ir_idx):                    # a returning IR player displaces the weakest active
-            if q < len(weakest):
-                Geff[weakest[q]] *= 1 - A[p_ir]
+    Geff = displaced_games(G, A, rost, irs, val)
     return {"rost": rost, "ir": irs, "ir_dict": ir, "tids": tids, "names": names, "unmodeled": unmodeled, "pairs": pairs,
             "tot0": tot0, "h2h0": head_to_head(lg, tids), "weeks_left": weeks_left, "sched": sched, "G": G, "Geff": Geff,
             "A": A, "info": info}
+
+
+def displaced_games(G, A, rost, irs, val):
+    """Games x availability [P, periods] for these rosters: as a team's IR players return, each takes the games of one
+    of its weakest active players (by static value). Computed per roster, so a move that changes who is weakest moves
+    the displacement with it."""
+    Geff = G * A
+    for s in range(len(rost)):
+        weakest = sorted((p for p in rost[s] if p >= 0), key=lambda p: val[p])
+        for q, p_ir in enumerate(p for p in irs[s] if p >= 0):
+            if q < len(weakest):
+                Geff[weakest[q]] *= 1 - A[p_ir]
+    return Geff
 
 
 def full(rost, irs):

@@ -47,7 +47,12 @@ class Ctx:
         self.h2h0 = B["h2h0"]
         self.G = B["Geff"]                                       # each remaining matchup's games x availability
         import live as LV
-        self.week0 = LV.week0_for(self.pairs, self.weeks_left)  # the week in progress, from live totals
+        self.lv = None                                           # the live engine for the week in progress
+        if LV.LIVE_FILE.exists() and self.weeks_left:
+            lv = LV.Live()
+            if lv.period == self.weeks_left[0] and np.array_equal(lv.season.df["id"], self.df["id"]):
+                self.lv = lv
+        self.week0 = None if self.lv is None else self.lv.week0_pc(self.pairs[0])   # from live totals
         self.ev = M.Evaluator(self.season, proj_unc=True)
         self.truth = self.ev.draw_truth(R, np.random.default_rng(SEED))
         self.val, _ = M.static_value(self.df)
@@ -85,12 +90,34 @@ class Ctx:
                     lost += plays.sum() - E[plays][a, b].sum()
         return lost / n_sims
 
+    def games(self, rost):
+        """Each remaining matchup's games x availability for these rosters (IR returns displace each roster's own
+        weakest players; for the league's rosters this is self.G)."""
+        return I.displaced_games(self.B["G"], self.B["A"], rost, self.irs, self.val)
+
+    def week0_for(self, rost):
+        """The week in progress (live category odds) with these rosters. A player who changes team (added or traded)
+        starts on the bench, as ESPN places him, so today's started games are locked for him (K1)."""
+        if self.lv is None or np.array_equal(rost, self.rost):
+            return self.week0
+        team0, team1 = np.full(len(self.df), -1), np.full(len(self.df), -1)
+        for s in range(len(rost)):
+            team0[self.rost[s][self.rost[s] >= 0]] = s
+            team1[rost[s][rost[s] >= 0]] = s
+        moved = np.where((team1 >= 0) & (team1 != team0))[0]
+        keep = self.lv.slot_now[moved].copy()
+        self.lv.slot_now[moved] = 12
+        try:
+            return self.lv.week0_pc(self.pairs[0], rost)
+        finally:
+            self.lv.slot_now[moved] = keep
+
     def outcomes(self, rost):
         full = I.full(rost, self.irs)
         RR = np.broadcast_to(full[None], (R,) + full.shape).copy()
-        mS, vS = self.ev.truth_team_stats(self.truth, RR, g=self.G)
+        mS, vS = self.ev.truth_team_stats(self.truth, RR, g=self.games(rost))
         return L.outcomes_by_rollout(mS, vS, np.random.default_rng(SEED + 1), K=K, pairs=self.pairs, tot0=self.tot0,
-                                     per_week=True, week0_pc=self.week0, h2h0=self.h2h0)
+                                     per_week=True, week0_pc=self.week0_for(rost), h2h0=self.h2h0)
 
     def delta(self, rost, teams):
         o = self.outcomes(rost)
@@ -171,8 +198,9 @@ def week_preview(cx):
         return period, None, None
     o = cx.tids.index(opp_id)
     wk = I.PERIOD_WEEKS.get(period, [0])
-    if period in cx.weeks_left:
-        gw = cx.G[:, cx.weeks_left.index(period)]               # this week's games x availability
+    k = cx.weeks_left.index(period) if period in cx.weeks_left else None
+    if k is not None:
+        gw = cx.G[:, k]                                          # this week's games x availability
     else:
         gw = I.games_by_period(cx.season, [period])[:, 0] if period in I.PERIOD_WEEKS else np.zeros(len(cx.df))
     ev = cx.ev
@@ -181,7 +209,7 @@ def week_preview(cx):
     pc = M.Evaluator.cat_probs(m[0, 0], v[0, 0], m[1, 0], v[1, 0])
     pw = float(M.Evaluator.matchup_win(pc))
     games = {"me": int(round(gw[cx.rost[cx.me][cx.rost[cx.me] >= 0]].sum())), "opp": int(round(gw[cx.rost[o][cx.rost[o] >= 0]].sum()))}
-    cx.week = {"g": gw, "opp": o}
+    cx.week = {"g": gw, "opp": o, "k": k}
     pred = {"period": period, "opponent": cx.names[o], "p_win": pw, "cats": dict(zip(CAT_LIST, map(float, pc))),
             "games": games, "made": pd.Timestamp.now().isoformat(), "model_weeks": wk}
     f = OUT / f"pred_wk{period:02d}.json"
@@ -197,7 +225,12 @@ def week_win(cx, my_roster):
     ev, wk = cx.ev, getattr(cx, "week", None)
     if wk is None:
         return None
-    ev.wmu, ev.wvar, ev.own = ev.weekly(ev.mu, ev.avail, np.repeat(wk["g"][:, None], 4, 1))
+    g = wk["g"]
+    if wk.get("k") is not None:                                  # this roster's own IR displacement
+        r = cx.rost.copy()
+        r[cx.me] = my_roster
+        g = cx.games(r)[:, wk["k"]]
+    ev.wmu, ev.wvar, ev.own = ev.weekly(ev.mu, ev.avail, np.repeat(g[:, None], 4, 1))
     m, v = ev.team_stats(np.stack([my_roster, cx.rost[wk["opp"]]]))
     p = float(M.Evaluator.matchup_win(M.Evaluator.cat_probs(m[0, 0], v[0, 0], m[1, 0], v[1, 0])))
     ev.wmu, ev.wvar, ev.own = ev.weekly(ev.mu, ev.avail)
