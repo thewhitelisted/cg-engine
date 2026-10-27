@@ -50,7 +50,7 @@ def main(my_team_id=13, proj=None, out_name="dashboard.json"):
     import live as LV
     week0 = LV.week0_for(pairs, weeks_left) if proj == LIVE_CONFIG["proj"] else None
     out = L.season_outcomes(mW, vW, np.random.default_rng(SEED + 1), K=K, pairs=pairs, tot0=tot0, per_week=True,
-                            week0_pc=week0)
+                            week0_pc=week0, h2h0=B["h2h0"])
     week_p = {}                                          # (period, team slot) -> P(win that matchup, its own games)
     for k, (wkid, pr) in enumerate(zip(weeks_left, pairs)):
         for h, a_ in pr:

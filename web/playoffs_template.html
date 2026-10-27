@@ -205,7 +205,7 @@ svg text { fill: var(--ink-2); font: 12px var(--body); }
     const t = T[me];
     document.getElementById("road-sub").textContent = t.name;
     const st = [
-      ["Make playoffs", t.p_playoffs, `Top-8 finish · ${t.exp_cats} projected category wins`],
+      ["Make playoffs", t.p_playoffs, `Top-8 finish · ${t.exp_wins} projected wins`],
       ["Reach semifinal", t.p_semis, `Wins the ${WKS[0]} quarterfinal ${pct(t.p_semis / t.p_playoffs)} of the time`],
       ["Reach final", t.p_final, `Wins the ${WKS[1]} semifinal ${pct(t.p_final / t.p_semis)}`],
       ["Win the title", t.p_1st, `Wins the ${WKS[2]} final ${pct(t.p_1st / t.p_final)}`],
@@ -232,7 +232,7 @@ svg text { fill: var(--ink-2); font: 12px var(--body); }
   }
 
   function drawBracket() {
-    const proj = [...T.keys()].sort((a, b) => T[b].exp_cats - T[a].exp_cats).slice(0, 8);   // seeds 1..8
+    const proj = [...T.keys()].sort((a, b) => T[b].exp_wins - T[a].exp_wins).slice(0, 8);   // seeds 1..8
     const pw = (a, b, k) => D.pw_playoff[a][b][k];
     const game = (a, b, k) => {
       const pa = pw(a, b, k), fa = pa >= 0.5;
@@ -282,12 +282,12 @@ svg text { fill: var(--ink-2); font: 12px var(--body); }
   }
 
   const cols = [["name", "Team", "l"], ["p_playoffs", "Playoffs"], ["p_semis", "Semis"], ["p_final", "Final"], ["p_1st", "Title"],
-                ["p_2nd", "2nd"], ["p_3rd", "3rd"], ["exp_dollars", "Exp. winnings"], ["exp_cats", "Proj. cat wins"]];
+                ["p_2nd", "2nd"], ["p_3rd", "3rd"], ["exp_dollars", "Exp. winnings"], ["exp_wins", "Proj. wins"]];
   let sortKey = "p_1st", asc = false;
   const cont = document.getElementById("cont");
   function drawCont() {
     const rows = [...T.keys()].sort((a, b) => sortKey === "name" ? T[a].name.localeCompare(T[b].name) * (asc ? 1 : -1) : (T[a][sortKey] - T[b][sortKey]) * (asc ? 1 : -1));
-    const f = (k, v) => k === "name" ? esc(v) : k === "exp_dollars" ? "$" + v.toFixed(2) : k === "exp_cats" ? v.toFixed(1) : pct(v, k === "p_1st" || k === "p_2nd" || k === "p_3rd" ? 1 : 0);
+    const f = (k, v) => k === "name" ? esc(v) : k === "exp_dollars" ? "$" + v.toFixed(2) : k === "exp_wins" ? v.toFixed(1) : pct(v, k === "p_1st" || k === "p_2nd" || k === "p_3rd" ? 1 : 0);
     cont.innerHTML = `<thead><tr>${cols.map(([k, l, c]) => `<th class="${c || ""}" ${k === sortKey ? `aria-sort="${asc ? "ascending" : "descending"}"` : ""}><button data-k="${k}">${l}</button></th>`).join("")}</tr></thead><tbody>` +
       rows.map(i => `<tr class="${i === me ? "me" : ""}">${cols.map(([k, , c]) => `<td class="${c || ""} ${k === "name" ? "team" : ""}">${f(k, T[i][k])}</td>`).join("")}</tr>`).join("") + `</tbody>`;
   }

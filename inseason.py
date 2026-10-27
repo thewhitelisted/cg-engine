@@ -136,7 +136,8 @@ def games_by_period(season, periods):
 
 
 def state(lg, tids, n_reg=19):
-    """Remaining regular-season schedule as slot pairs [weeks, 6, 2] and categories won so far [12]."""
+    """Remaining regular-season schedule as slot pairs [weeks, 6, 2] and standings points so far [12] (ESPN's record,
+    which in this league's format, H2H Most Categories, is the matchup record: wins + ties / 2)."""
     slot = {t: s for s, t in enumerate(tids)}
     done = set(lg.get("completed_weeks", []))
     sched = sorted(m for m in lg["schedule"] if m[0] <= n_reg)
@@ -146,6 +147,23 @@ def state(lg, tids, n_reg=19):
     rec = {t: teams[t].get("record") or lg.get("records", {}).get(str(t)) or [0, 0, 0] for t in tids}
     tot0 = np.array([rec[t][0] + 0.5 * rec[t][2] for t in tids], float)
     return pairs, tot0, weeks, sched
+
+
+def head_to_head(lg, tids, n_reg=19):
+    """Finished regular-season weeks between each pair of teams [2, 12, 12]: points of i against j (ties half) and
+    meetings (for the head-to-head seeding tiebreak, league.py)."""
+    slot = {t: s for s, t in enumerate(tids)}
+    out = np.zeros((2, len(tids), len(tids)))
+    for wk, h, a, winner in (r[:4] for r in lg.get("results", [])):
+        if wk > n_reg or winner not in ("HOME", "AWAY", "TIE"):
+            continue
+        x, y = slot[h], slot[a]
+        ph = {"HOME": 1.0, "AWAY": 0.0, "TIE": 0.5}[winner]
+        out[0, x, y] += ph
+        out[0, y, x] += 1 - ph
+        out[1, x, y] += 1
+        out[1, y, x] += 1
+    return out
 
 
 # ---------------------------------------------------------------- availability (DECISIONS.md A1)
@@ -248,7 +266,8 @@ def build(season, lg, g, today=None):
             if q < len(weakest):
                 Geff[weakest[q]] *= 1 - A[p_ir]
     return {"rost": rost, "ir": irs, "ir_dict": ir, "tids": tids, "names": names, "unmodeled": unmodeled, "pairs": pairs,
-            "tot0": tot0, "weeks_left": weeks_left, "sched": sched, "G": G, "Geff": Geff, "A": A, "info": info}
+            "tot0": tot0, "h2h0": head_to_head(lg, tids), "weeks_left": weeks_left, "sched": sched, "G": G, "Geff": Geff,
+            "A": A, "info": info}
 
 
 def full(rost, irs):

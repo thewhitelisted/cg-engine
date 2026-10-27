@@ -44,6 +44,7 @@ class Ctx:
         self.irs = B["ir"]
         self.me = self.tids.index(MY_TEAM)
         self.pairs, self.tot0, self.weeks_left, self.sched = B["pairs"], B["tot0"], B["weeks_left"], B["sched"]
+        self.h2h0 = B["h2h0"]
         self.G = B["Geff"]                                       # each remaining matchup's games x availability
         import live as LV
         self.week0 = LV.week0_for(self.pairs, self.weeks_left)  # the week in progress, from live totals
@@ -89,7 +90,7 @@ class Ctx:
         RR = np.broadcast_to(full[None], (R,) + full.shape).copy()
         mS, vS = self.ev.truth_team_stats(self.truth, RR, g=self.G)
         return L.outcomes_by_rollout(mS, vS, np.random.default_rng(SEED + 1), K=K, pairs=self.pairs, tot0=self.tot0,
-                                     per_week=True, week0_pc=self.week0)
+                                     per_week=True, week0_pc=self.week0, h2h0=self.h2h0)
 
     def delta(self, rost, teams):
         o = self.outcomes(rost)

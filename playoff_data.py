@@ -32,7 +32,7 @@ def main(my_team_id=13):
     mW, vW = ev.truth_team_stats(truth, RR, g=G)
     import live as LV
     out = L.playoff_detail(mW, vW, np.random.default_rng(SEED + 1), K=K, pairs=pairs, tot0=tot0, per_week=True,
-                           week0_pc=LV.week0_for(pairs, weeks_left))
+                           week0_pc=LV.week0_for(pairs, weeks_left), h2h0=B["h2h0"])
     fr = I.full(rost, B["ir"])
     po_games = np.array([G[fr[t][fr[t] >= 0], -3:].sum(0) for t in range(12)])               # [T, 3]
     pw = out["pw_playoff"]                                                                      # [T, T, 3]
@@ -49,7 +49,8 @@ def main(my_team_id=13):
                       "p_seed": [r(x) for x in out["p_seed"][t]], "p_playoffs": r(out["p_playoffs"][t]),
                       "p_semis": r(out["p_semis"][t]), "p_final": r(out["p_final"][t]), "p_1st": r(out["p_1st"][t]),
                       "p_2nd": r(out["p_2nd"][t]), "p_3rd": r(out["p_3rd"][t]), "exp_dollars": r(out["exp_dollars"][t], 2),
-                      "exp_cats": r(out["exp_cats"][t], 1), "title_by_seed": [r(x) for x in out["title_by_seed"][t]],
+                      "exp_wins": r(out["exp_wins"][t], 1), "exp_cats": r(out["exp_cats"][t], 1),
+                      "title_by_seed": [r(x) for x in out["title_by_seed"][t]],
                       "po_games": [int(round(x)) for x in po_games[t]], "po_week_win": [r(x, 3) for x in po_week_win[t]],
                       "po_cat_win": {c: r(po_cat_win[t, i], 3) for i, c in enumerate(M.CATS)},
                       "qf": opp_list("qf"), "sf": opp_list("sf"), "final": opp_list("final")})

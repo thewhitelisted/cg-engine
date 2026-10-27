@@ -589,7 +589,7 @@ def last_week(lg, history):
             continue
         _, h, a, winner, hw, hl, ht = r[:7]
         rows.append({"home": names[h], "away": names[a], "score": [hw, hl, ht],
-                     "p_home": odds.get(f"{h}-{a}"), "home_won": winner == "HOME", "tie": winner == "UNDECIDED"})
+                     "p_home": odds.get(f"{h}-{a}"), "home_won": winner == "HOME", "tie": winner == "TIE"})
     return {"period": wk, "rows": rows}
 
 

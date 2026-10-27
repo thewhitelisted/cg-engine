@@ -1,9 +1,11 @@
 """League-format simulation: P(championship) for The Cool Guys format.
 
-Regular season: N_REG one-week matchups against randomly paired opponents; standings by total
-categories won (ESPN "H2H Each Category"). Top 8 make the playoffs, bracket 1v8 / 4v5 / 2v7 / 3v6
+Regular season: N_REG one-week matchups (randomly paired, or the league's real schedule); standings by matchup
+record (ESPN "H2H Most Categories": more categories wins the week; DECISIONS.md F1), seeding ties by head-to-head
+among the tied teams, then a coin flip. STANDINGS = "categories" restores the earlier rule (total categories won,
+"H2H Each Category"), to reproduce studies before F1. Top 8 make the playoffs, bracket 1v8 / 4v5 / 2v7 / 3v6
 (no reseeding), three one-week rounds in the fantasy-playoff weeks; more categories won advances
-(ties -> higher seed).
+(p_champ_real: ties -> higher seed).
 
 Two entry points:
   p_champ_model(...)  model-based, from team weekly mean/var  -> used by sim.Draft (objective="champ")
@@ -18,6 +20,7 @@ N_REG = 19
 N_PLAYOFF = 8
 BRACKET = [(0, 7), (3, 4), (1, 6), (2, 5)]  # seed indices; winners of pairs 0/1 and 2/3 meet
 PRIZES = (150.0, 90.0, 60.0)                # 1st / 2nd / 3rd (3rd: semifinal losers meet in the final week)
+STANDINGS = "matchups"                      # ESPN scoringType H2H_MOST_CATEGORIES (F1); "categories": the earlier rule
 
 
 def _random_pairings(rng, lead_shape, n_weeks, T):
@@ -39,22 +42,24 @@ def payout_model(mS, vS, me: int, rng, K: int = 64, prizes=PRIZES, pairs=None, t
     return sum(z * (pl == me).mean(1) for z, pl in zip(prizes, places))
 
 
-def outcomes_by_rollout(mS, vS, rng, K: int = 64, prizes=PRIZES, pairs=None, tot0=None, per_week=False, week0_pc=None) -> dict:
+def outcomes_by_rollout(mS, vS, rng, K: int = 64, prizes=PRIZES, pairs=None, tot0=None, per_week=False, week0_pc=None,
+                        h2h0=None) -> dict:
     """Per-rollout, per-team outcomes [R, T]: expected prize money, P(title), P(playoffs). Used for paired
     comparisons of roster changes (same truth draws and rng for both sides)."""
     T = mS.shape[1]
-    champ, second, third, seeds = _places_model(mS, vS, rng, K, pairs, tot0, per_week, week0_pc=week0_pc)
+    champ, second, third, seeds = _places_model(mS, vS, rng, K, pairs, tot0, per_week, week0_pc=week0_pc, h2h0=h2h0)
     team = np.arange(T)
     dollars = sum(z * (pl[..., None] == team).mean(1) for z, pl in zip(prizes, (champ, second, third)))
     return {"dollars": dollars, "title": (champ[..., None] == team).mean(1),
             "playoffs": (seeds[..., None] == team).any(-2).mean(1)}
 
 
-def playoff_detail(mS, vS, rng, K: int = 64, pairs=None, tot0=None, per_week=False, week0_pc=None, prizes=PRIZES) -> dict:
+def playoff_detail(mS, vS, rng, K: int = 64, pairs=None, tot0=None, per_week=False, week0_pc=None, prizes=PRIZES,
+                   h2h0=None) -> dict:
     """Everything about the playoffs, per team: seed distribution, round-by-round survival, and who each team
     meets in each round with its win rate against them. Same simulation (and rng use) as season_outcomes."""
     T = mS.shape[1]
-    d = _places_model(mS, vS, rng, K, pairs, tot0, per_week, detail=True, week0_pc=week0_pc)
+    d = _places_model(mS, vS, rng, K, pairs, tot0, per_week, detail=True, week0_pc=week0_pc, h2h0=h2h0)
     seeds, games = d["seeds"], d["games"]
     team = np.arange(T)
     p_seed = np.stack([(seeds[..., k] == t).mean() for t in team for k in range(N_PLAYOFF)]).reshape(T, N_PLAYOFF)
@@ -77,19 +82,21 @@ def playoff_detail(mS, vS, rng, K: int = 64, pairs=None, tot0=None, per_week=Fal
     out["p_2nd"] = np.array([(d["second"] == t).mean() for t in team])
     out["p_3rd"] = np.array([(d["third"] == t).mean() for t in team])
     out["exp_dollars"] = prizes[0] * out["p_1st"] + prizes[1] * out["p_2nd"] + prizes[2] * out["p_3rd"]
-    tot = d["tot"]
-    out["exp_cats"] = tot.mean((0, 1))
+    out["exp_wins"] = d["tot"].mean((0, 1))                                              # standings points, season end
+    out["exp_cats"] = d["cats"].mean((0, 1))                                             # categories won, weeks to play
     out["title_by_seed"] = np.array([[np.mean(d["champ"][seeds[..., k] == t] == t) if (seeds[..., k] == t).any() else np.nan
                                       for k in range(N_PLAYOFF)] for t in team])
     out["pw_playoff"] = d["pw"].mean(0)                                                 # [T, T, 3] by playoff week
     return out
 
 
-def season_outcomes(mS, vS, rng, K: int = 64, prizes=PRIZES, pairs=None, tot0=None, per_week=False, week0_pc=None) -> dict:
+def season_outcomes(mS, vS, rng, K: int = 64, prizes=PRIZES, pairs=None, tot0=None, per_week=False, week0_pc=None,
+                    h2h0=None) -> dict:
     """Per-team outcome probabilities [T], pooled over rollouts and simulated seasons. pairs: the remaining
-    regular-season schedule as team-index pairs [weeks, T/2, 2]; tot0: categories won so far [T]."""
+    regular-season schedule as team-index pairs [weeks, T/2, 2]; tot0: standings points so far [T] (matchup wins +
+    ties / 2); h2h0: finished weeks between each pair of teams [2, T, T] (inseason.head_to_head)."""
     T = mS.shape[1]
-    champ, second, third, seeds = _places_model(mS, vS, rng, K, pairs, tot0, per_week, week0_pc=week0_pc)
+    champ, second, third, seeds = _places_model(mS, vS, rng, K, pairs, tot0, per_week, week0_pc=week0_pc, h2h0=h2h0)
     out = {k: np.array([(pl == t).mean() for t in range(T)]) for k, pl in
            (("p_1st", champ), ("p_2nd", second), ("p_3rd", third))}
     out["p_playoffs"] = np.array([(seeds == t).any(-1).mean() for t in range(T)])
@@ -98,8 +105,10 @@ def season_outcomes(mS, vS, rng, K: int = 64, prizes=PRIZES, pairs=None, tot0=No
     return out
 
 
-def _places_model(mS, vS, rng, K, pairs=None, tot0=None, per_week=False, detail=False, week0_pc=None):
+def _places_model(mS, vS, rng, K, pairs=None, tot0=None, per_week=False, detail=False, week0_pc=None, h2h0=None):
     """Simulate K seasons per rollout; returns (champion, runner-up, third) [R, K] and playoff seeds [R, K, 8].
+    Each simulated week draws the categories won; under STANDINGS = "matchups" more than 4.5 wins the week (simulated
+    weeks are never tied: each side's chance carries about half the chance of a tie), and both rules use the same draws.
 
     Week layout of mS / vS [R, T, W, S]:
       W = 4:              week 0 = a typical regular-season week (used for every regular week), 1-3 = playoffs
@@ -137,15 +146,74 @@ def _places_model(mS, vS, rng, K, pairs=None, tot0=None, per_week=False, detail=
     tot = np.zeros((R, K, T)) + (0 if tot0 is None else np.asarray(tot0, float))
     rk = np.broadcast_to(np.arange(R)[:, None, None, None], a.shape)
     kk = np.broadcast_to(np.arange(K)[None, :, None, None], a.shape)
-    np.add.at(tot, (rk, kk, a), ca)
-    np.add.at(tot, (rk, kk, b), 9 - ca)
-    seeds = np.argsort(-(tot + 1e-6 * rng.random(tot.shape)), axis=-1)[..., :N_PLAYOFF]  # [R, K, 8]
+    if STANDINGS == "categories":
+        np.add.at(tot, (rk, kk, a), ca)
+        np.add.at(tot, (rk, kk, b), 9 - ca)
+        seeds = np.argsort(-(tot + 1e-6 * rng.random(tot.shape)), axis=-1)[..., :N_PLAYOFF]  # [R, K, 8]
+        u = rng.random((R, K, 3, 4))
+    else:
+        win = ca > 4.5
+        np.add.at(tot, (rk, kk, a), win)
+        np.add.at(tot, (rk, kk, b), ~win)
+        rng.random(tot.shape)                    # the earlier rule's tiebreak draws: keeps the playoff draws u paired
+        u = rng.random((R, K, 3, 4))
+        hh, mt = _head_to_head(a, b, win, T, h2h0)
+        flip = rng.random((R * K, N_PLAYOFF, T))
+        seeds = _seed(tot.reshape(R * K, T), hh, mt, flip).reshape(R, K, N_PLAYOFF)
 
-    u = rng.random((R, K, 3, 4))
     if detail:
+        cats = np.zeros((R, K, T))
+        np.add.at(cats, (rk, kk, a), ca)
+        np.add.at(cats, (rk, kk, b), 9 - ca)
         champ, second, third, games = _bracket_vec(seeds, pw, u, detail=True)
-        return {"champ": champ, "second": second, "third": third, "seeds": seeds, "games": games, "tot": tot, "pw": pw}
+        return {"champ": champ, "second": second, "third": third, "seeds": seeds, "games": games, "tot": tot,
+                "cats": cats, "pw": pw}
     return (*_bracket_vec(seeds, pw, u), seeds)
+
+
+def _head_to_head(a, b, win, T, h2h0=None):
+    """Per simulated season [R * K, T, T]: twice the head-to-head points of team i against team j (ESPN ties count 1),
+    and their meetings; finished weeks from h2h0 [2, T, T] plus the simulated weeks a, b, win [R, K, n, T/2]."""
+    R, K, n = a.shape[:3]
+    hh = np.zeros((R * K, T * T), np.int16)
+    mt = np.zeros((R * K, T * T), np.int16)
+    if h2h0 is not None:
+        hh += np.rint(2 * np.asarray(h2h0[0])).astype(np.int16).ravel()
+        mt += np.asarray(h2h0[1]).astype(np.int16).ravel()
+    rows = np.arange(R * K)[:, None]
+    for w in range(n):                           # each team plays once a week, so no index repeats within a row
+        x, y = a[:, :, w].reshape(R * K, -1), b[:, :, w].reshape(R * K, -1)
+        wx = win[:, :, w].reshape(R * K, -1)
+        hh[rows, x * T + y] += 2 * wx
+        hh[rows, y * T + x] += 2 * ~wx
+        mt[rows, x * T + y] += 1
+        mt[rows, y * T + x] += 1
+    return hh.reshape(R * K, T, T), mt.reshape(R * K, T, T)
+
+
+def _seed(pts, hh, mt, flip):
+    """ESPN H2H Most Categories seeding (support article 360059579032): most standings points first; teams level on
+    points are ordered by head-to-head points among them, used only if every pair of them has met equally often, then
+    by a coin flip; after each seed the procedure restarts for the teams still level. pts [N, T]; hh, mt [N, T, T]
+    (_head_to_head); flip [N, n, T] uniform. Returns seeds [N, n]."""
+    N, T = pts.shape
+    p2 = np.rint(2 * pts).astype(np.int64)      # half points (ESPN ties) as integers
+    off = ~np.eye(T, dtype=bool)
+    left = np.ones((N, T), bool)
+    rows = np.arange(N)
+    seeds = np.empty((N, flip.shape[1]), np.int64)
+    for s in range(flip.shape[1]):
+        top = np.where(left, p2, np.iinfo(np.int64).min).max(1, keepdims=True)
+        tied = left & (p2 == top)
+        pair = tied[:, :, None] & tied[:, None, :] & off
+        h = np.where(pair, hh, 0).sum(-1)                                          # within the tied group
+        lo, hi = np.where(pair, mt, np.iinfo(np.int16).max).min(-1), np.where(pair, mt, -1).max(-1)
+        even = ((lo == hi) | ~pair.any(-1)).all(-1, keepdims=True)                # equal meetings (mt is symmetric)
+        key = np.where(tied, np.where(even, h, 0) + flip[:, s], -np.inf)
+        pick = key.argmax(1)
+        seeds[:, s] = pick
+        left[rows, pick] = False
+    return seeds
 
 
 def _bracket_vec(seeds, pw, u, detail=False):

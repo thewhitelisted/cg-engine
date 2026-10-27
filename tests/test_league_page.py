@@ -66,6 +66,16 @@ class ApiStateTest(unittest.TestCase):
         self.assertNotEqual(LP.api_state(data(updated="Sun 5:01 PM"))["v"], LP.api_state(data())["v"] + "z")
 
 
+class LastWeekTest(unittest.TestCase):
+    def test_tie(self):
+        """ESPN writes a tied week as winner "TIE" (matchup 1: Joey's Toes 4-4-1 Thinny Thongs)."""
+        lg = {"completed_weeks": [1], "teams": [{"id": 11, "name": "Joey"}, {"id": 1, "name": "Thinny"},
+                                                {"id": 5, "name": "Nathan"}, {"id": 13, "name": "Chrissy"}],
+              "results": [[1, 11, 1, "TIE", 4, 4, 1, {}], [1, 5, 13, "HOME", 5, 4, 0, {}]]}
+        rows = LP.last_week(lg, {"1": {"11-1": 0.253, "5-13": 0.513}})["rows"]
+        self.assertEqual([(r["tie"], r["home_won"]) for r in rows], [(True, False), (False, True)])
+
+
 class ShellTest(unittest.TestCase):
     def test_shell(self):
         s = LP.shell()
