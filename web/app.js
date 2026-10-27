@@ -194,7 +194,7 @@
         const win = r.tie ? "Tie" : r.home_won ? r.home : r.away;
         const favWon = p != null && !r.tie && ((p >= 0.5) === r.home_won);
         return `<tr><td>${e(r.home)} vs ${e(r.away)}</td><td>${odds}</td><td>${r.score[0]}–${r.score[1]}–${r.score[2]}</td>` +
-          `<td class="l">${e(win)}${p == null ? "" : favWon ? " ✓" : " (upset)"}</td></tr>`;
+          `<td class="l">${e(win)}${p == null || r.tie ? "" : favWon ? " ✓" : " (upset)"}</td></tr>`;
       });
       last = section(`Matchup ${data.last.period}: odds against results`,
         `<table><tr><th>Matchup</th><th>Odds at first update</th><th>Final</th><th class="l">Winner</th></tr>` +

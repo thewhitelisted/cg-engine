@@ -1,5 +1,6 @@
 // web/app.js render(state) must reproduce, character for character, the page the original Python renderer produced for
-// the same data (tests/fixtures/page_cases.json.gz: real data plus synthetic states covering every section and edge).
+// the same data (tests/fixtures/page_cases.json.gz: real data plus synthetic states covering every section and edge),
+// except for changes made since on purpose: a tied week in "odds against results" carries no ✓ / (upset) mark.
 //     node tests/page_render.test.js [CASES.json.gz]
 const fs = require("fs");
 const path = require("path");
@@ -25,5 +26,9 @@ const fmt = [[app.fixed(0.0625, 3), "0.062"], [app.fixed(0.1875, 3), "0.188"], [
 for (const [got, want] of fmt) {
   if (got !== want) { failed++; console.log(`FAIL format: got ${got}, want ${want}`); }
 }
-console.log(failed ? `${failed} FAILED` : `all ${cases.length} pages identical; formatting checks passed`);
+// a tied week is neither the favourite's win nor an upset
+const tied = cases.find(c => c.state.last && c.state.last.rows.some(r => r.tie && r.p_home != null));
+const row = tied && app.render(tied.state).match(/<tr><td>[^<]* vs [^<]*<\/td>(?:(?!<\/tr>).)*>Tie[^<]*<\/td><\/tr>/);
+if (!row || /✓|upset/.test(row[0])) { failed++; console.log(`FAIL tie mark: ${row ? row[0] : "no tied row with odds"}`); }
+console.log(failed ? `${failed} FAILED` : `all ${cases.length} pages identical; formatting and tie checks passed`);
 process.exit(failed ? 1 : 0);
