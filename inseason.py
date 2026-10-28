@@ -79,10 +79,29 @@ def _fetch_all_gamelogs():
         return pd.DataFrame(columns=["id", "min"])
 
 
-def inseason_season(season, g):
-    """Copy of `season` whose df carries blended rates; season.err_mult shrinks projection error."""
+def with_teams(season, teams):
+    """Copy of `season` with each listed player on his current NBA team ({espn id: pro team id}; 0 = no team, so no
+    games); unlisted players keep the preseason file's team. The schedules derived from the team are recomputed
+    (DECISIONS.md T1)."""
     s = copy.copy(season)
     df = season.df.copy()
+    cur = df["id"].map(teams)
+    moved = cur.notna() & (cur != df["pro_team_id"])
+    if moved.any():
+        df.loc[moved, "pro_team_id"] = cur[moved].astype(int)
+        abbrev = pd.read_csv(M.DATA / "teams.csv").set_index("pro_team_id")["abbrev"]
+        df.loc[moved, "team"] = df.loc[moved, "pro_team_id"].map(abbrev).fillna("FA")
+    s.df = df
+    for k in ("games_matrix", "team_idx"):                  # cached_property values copied from the preseason season
+        s.__dict__.pop(k, None)
+    return s
+
+
+def inseason_season(season, g, teams=None):
+    """Copy of `season` whose df carries blended rates and current NBA teams (default: current_teams());
+    season.err_mult shrinks projection error."""
+    s = with_teams(season, current_teams() if teams is None else teams)
+    df = s.df
     mu, n = waiver.updated_rates(season, g)
     df[M.STATK] = mu
     df["fgm"] = df["fga"] * (df["fgx"] / df["fga"].clip(lower=0.1) + M.LG_FG)
@@ -173,21 +192,46 @@ START_M = 4                     # an OUT/IR player with no in-season absence yet
 N_IR = 2
 
 
-_STATUSES = None
+_STATUSES = _TEAMS = None
+
+
+def player_feed():
+    """ESPN's public player feed (top 700 by draft rank): injury status and current NBA team (0 = none) by player id,
+    cached on disk for STATUS_TTL."""
+    def fetch_all():
+        try:
+            pl = fetch.flatten(fetch.fetch_players(M.LIVE_SEASON, limit=700), M.LIVE_SEASON)
+            return {"status": {int(i): str(s) for i, s in zip(pl["id"], pl["injury"].fillna(""))},
+                    "team": {int(i): int(t) for i, t in zip(pl["id"], pl["pro_team_id"]) if pd.notna(t)}}
+        except Exception:
+            return {"status": {}, "team": {}}
+    return disk_cached("player_feed", STATUS_TTL, fetch_all)
 
 
 def all_statuses():
     """ESPN injury status for every player (public player feed), fetched once per run."""
     global _STATUSES
     if _STATUSES is None:
-        def fetch_all():
-            try:
-                pl = fetch.flatten(fetch.fetch_players(M.LIVE_SEASON, limit=700), M.LIVE_SEASON)
-                return {int(i): str(s) for i, s in zip(pl["id"], pl["injury"].fillna(""))}
-            except Exception:
-                return {}
-        _STATUSES = disk_cached("statuses", STATUS_TTL, fetch_all)
+        _STATUSES = player_feed()["status"]
     return _STATUSES
+
+
+def all_teams():
+    """Current NBA team for every player in the public player feed, fetched once per run (DECISIONS.md T1)."""
+    global _TEAMS
+    if _TEAMS is None:
+        _TEAMS = player_feed()["team"]
+    return _TEAMS
+
+
+def current_teams():
+    """Each player's NBA team now: the player feed, with the league feed's rostered players on top (DECISIONS.md T1)."""
+    teams = dict(all_teams())
+    try:
+        teams.update({int(k): int(v) for k, v in load_league().get("pro_team", {}).items() if v is not None})
+    except Exception:
+        pass
+    return teams
 
 
 def participation(season, g, today=None):

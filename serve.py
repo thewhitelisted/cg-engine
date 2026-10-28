@@ -220,7 +220,7 @@ class Publisher:
     def full_refresh(self, live):
         j, _ = self.full_feed.get()
         lg = sync.normalize(j)
-        I._GAMELOGS = I._STATUSES = None              # their disk caches decide whether to refetch (30 / 10 min)
+        I._GAMELOGS = I._STATUSES = I._TEAMS = None   # their disk caches decide whether to refetch (30 / 10 min)
         try:
             self.tx = S.transactions(live["latest_scoring_period"], back=3)
         except Exception as e:
