@@ -2,7 +2,8 @@
 categories still in play), who plays today, standings, week-by-week results, head-to-head, all-play record and
 luck, league records, top performers, last week's odds against results, the model's season scorecard, and recent
 adds/drops; the category page (cats/): every matchup's chance in each category this week; and the players page
-(players/): how much every rostered player's starts moved his team's win chance this week. Player-level, only how a
+(players/, linked from the league page's footer): how much every rostered player's starts moved his team's win
+chance this week. Player-level, only how a
 player's games moved his team's win chance (no projections, values or recommendations), and no playoff or title odds.
 
     python3 league_page.py OUT_DIR        # writes a copy of the site (page, app, state) to OUT_DIR
