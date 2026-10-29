@@ -7,7 +7,9 @@
 
    render(state) is a line-by-line port of the page's original Python renderer (league_page.render, retired
    2026-10-25); tests/test_page_render.py holds the page it produced on fixed states, and this must match it exactly.
-   In Node (tests), module.exports gives {render, applyPatch, morph, fixed, pct}. */
+   renderCats(state) draws the category page (cats/index.html, <body data-page="cats">): every matchup's chance in each
+   category, from the same state and stream. In Node (tests), module.exports gives {render, renderCats, applyPatch, morph,
+   fixed, pct}. */
 (function (root) {
   "use strict";
   const CATS = ["FG%", "FT%", "3PM", "REB", "AST", "STL", "BLK", "TO", "PTS"];
@@ -49,11 +51,25 @@
       `<div class="tplot" ${attrs}></div></details>`;
   }
 
-  function card(gm, start, end) {
+  const abbrs = gm => [e(gm.home_abbr || gm.home.slice(0, 3).toUpperCase()), e(gm.away_abbr || gm.away.slice(0, 3).toUpperCase())];
+
+  function cardTop(gm, ha, aa) {             // team names, chances to win the week, and the bar (both pages' cards)
     const ph = gm.p_home;
-    const [w, l, t] = gm.score;
+    const [w, l] = gm.score;
     const [[hp, hl], [ap, al]] = gm.games;
-    const ha = e(gm.home_abbr || gm.home.slice(0, 3).toUpperCase()), aa = e(gm.away_abbr || gm.away.slice(0, 3).toUpperCase());
+    return `<div class="matchup">` +
+      `<div class="side"><div class="team ha">${e(gm.home)}</div><div class="pct ha">${pct(ph)}</div>` +
+      `<div class="meta">leads ${w} of 9 · ${hp} played, ${hl} left</div></div>` +
+      `<div class="side r"><div class="team hb">${e(gm.away)}</div><div class="pct hb">${pct(1 - ph)}</div>` +
+      `<div class="meta">leads ${l} of 9 · ${ap} played, ${al} left</div></div>` +
+      `</div>` +
+      `<div class="bar" title="${ha} ${pct(ph, 1)} · ${aa} ${pct(1 - ph, 1)}"><i style="width:${fixed(100 * ph, 1)}%"></i>` +
+      `<i style="width:${fixed(100 * (1 - ph), 1)}%"></i></div>`;
+  }
+
+  function card(gm, start, end) {
+    const t = gm.score[2];
+    const [ha, aa] = abbrs(gm);
     const head = CATS.map(c => `<th>${c}</th>`).join("");
     const rh = gm.totals.map(([, h], i) => `<td class="${gm.lead[i] === 1 ? "lead ha" : ""}">${h}</td>`).join("");
     const ra = gm.totals.map(([, , a], i) => `<td class="${gm.lead[i] === -1 ? "lead hb" : ""}">${a}</td>`).join("");
@@ -68,15 +84,7 @@
       inplay = `<div class="inplay"><span class="lbl">Toss-ups</span>` +
         ip.map(([c, txt]) => `<span class="chip"><b>${e(c)}</b> ${e(txt)}</span>`).join("") + "</div>";
     else if (ip != null) inplay = '<div class="inplay"><span class="lbl">No toss-up categories left.</span></div>';
-    return `<div class="card" data-key="${e(gm.key || "")}">` +
-      `<div class="matchup">` +
-      `<div class="side"><div class="team ha">${e(gm.home)}</div><div class="pct ha">${pct(ph)}</div>` +
-      `<div class="meta">leads ${w} of 9 · ${hp} played, ${hl} left</div></div>` +
-      `<div class="side r"><div class="team hb">${e(gm.away)}</div><div class="pct hb">${pct(1 - ph)}</div>` +
-      `<div class="meta">leads ${l} of 9 · ${ap} played, ${al} left</div></div>` +
-      `</div>` +
-      `<div class="bar" title="${ha} ${pct(ph, 1)} · ${aa} ${pct(1 - ph, 1)}"><i style="width:${fixed(100 * ph, 1)}%"></i>` +
-      `<i style="width:${fixed(100 * (1 - ph), 1)}%"></i></div>` +
+    return `<div class="card" data-key="${e(gm.key || "")}">` + cardTop(gm, ha, aa) +
       `<div class="caption">${bits.join(" · ")}</div>` +
       trendBlock(gm.trend || [], start, end, ha, aa, gm.key || "") +
       `<div class="scroll"><table class="cats"><tr><th></th>${head}</tr>` +
@@ -287,7 +295,53 @@
   ${moves}
   ${activity}
   ${later}
-  <footer class="foot"><a class="btn" href="insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
+  <footer class="foot"><a class="btn" href="cats/">Category odds, every matchup</a><a class="btn" href="insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
+`;
+  }
+
+  // ------------------------------------------------------------ the category page (cats/index.html)
+  function oddsCard(gm) {
+    const pc = gm.p_cats || [];              // the home team's chance in each category (CATS order)
+    const [ha, aa] = abbrs(gm);
+    const rows = gm.totals.map(([c, h, a], i) => {
+      const p = pc[i], ld = gm.lead[i];
+      const odds = p == null ? '<td class="p" colspan="3">—</td>' :
+        `<td class="p${p > 0.5 ? " fav ha" : ""}">${pct(p)}</td>` +
+        `<td class="tug"><div class="bar" title="${e(c)}: ${ha} ${pct(p, 1)} · ${aa} ${pct(1 - p, 1)}">` +
+        `<i style="width:${fixed(100 * p, 1)}%"></i><i style="width:${fixed(100 * (1 - p), 1)}%"></i></div></td>` +
+        `<td class="p b${p < 0.5 ? " fav hb" : ""}">${pct(1 - p)}</td>`;
+      return `<tr><th scope="row">${e(c)}</th><td class="${ld === 1 ? "lead ha" : ""}">${e(h)}</td>${odds}` +
+        `<td class="${ld === -1 ? "lead hb" : ""}">${e(a)}</td></tr>`;
+    }).join("");
+    const bits = ["chance to win the week"];
+    if (pc.length === CATS.length) {
+      const x = pc.reduce((s, p) => s + p, 0);
+      bits.push(`expected categories <span class="ha">${fixed(x, 1)}</span>–<span class="hb">${fixed(CATS.length - x, 1)}</span>`);
+    }
+    if (gm.score[2]) bits.push(`${gm.score[2]} tied`);
+    return `<div class="card" id="m${e(gm.key)}" data-key="${e(gm.key)}">` + cardTop(gm, ha, aa) +
+      `<div class="caption">${bits.join(" · ")}</div>` +
+      `<div class="scroll"><table class="odds"><tr><th></th><th><span class="dot da"></span>${ha}</th>` +
+      `<th class="c" colspan="3">Chance to win</th><th><span class="dot db"></span>${aa}</th></tr>${rows}</table></div>` +
+      `</div>`;
+  }
+
+  function renderCats(data) {
+    // a fixed order for the week (the league page sorts by closeness), so a matchup stays where the reader left it
+    const games = [...data.games].sort((a, b) => String(a.key).localeCompare(String(b.key), "en", { numeric: true }));
+    const nav = games.length ? '<nav class="jump" aria-label="Matchups">' +
+      games.map(g => `<a href="#m${e(g.key)}">${abbrs(g).join(" – ")}</a>`).join("") + "</nav>" : "";
+    const cards = games.map(oddsCard).join("\n  ") || '<p class="note">No matchups this week.</p>';
+    return `
+  <div><p class="back"><a href="../">← League page</a></p><h1>Category odds · Matchup ${data.period}</h1>
+  <div class="sub">${e(data.dates)} · updated ${e(data.updated)}</div></div>
+  ${nav}
+  <div id="matchups" style="display:grid;gap:14px">${cards}</div>
+  <p class="note">Each team's chance to win each category by Sunday, from what's happened so far plus a projection of
+  every remaining game: the same odds as the league page. Totals are this week's so far; bold leads the category now
+  (fewest turnovers wins TO). Expected categories: the average number each team ends up winning, the sum of its nine
+  chances. Updates live: new numbers appear on their own, without reloading.</p>
+  <footer class="foot"><a class="btn" href="../">League page</a><a class="btn" href="../insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
 `;
   }
 
@@ -342,18 +396,20 @@
     while (a.childNodes.length > b.childNodes.length) a.removeChild(a.lastChild);
   }
 
-  const api = { render, applyPatch, morph, fixed, pct, signed, g6 };
+  const api = { render, renderCats, applyPatch, morph, fixed, pct, signed, g6 };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; return; }
 
   // ------------------------------------------------------------ in the browser: load, draw, follow the stream
   const doc = root.document;
   const API = root.CG_API || "";             // the live server (set by the page); this site's own copy is the fallback
+  const cats = doc.body.dataset.page === "cats", SELF = doc.body.dataset.root || "";   // the category page sits in cats/
   let state = null, first = true, lastHeard = Date.now();
   function paint() {
     const t = doc.createElement("template");
-    t.innerHTML = `<div class="wrap">${render(state)}</div>`;
+    t.innerHTML = `<div class="wrap">${(cats ? renderCats : render)(state)}</div>`;
     const st = { dirty: new Set(), nav: false };
     morph(doc.querySelector(".wrap"), t.content.firstElementChild, st);
+    if (cats) return;                         // no charts or section highlighting there
     CG.bindCharts();                          // CG and initNav: the page's own script (shared global scope)
     if (first) { first = false; initNav(); CG.initCharts(); return; }
     st.dirty.forEach(box => (box.matches(".tplot") ? box.closest("details.trend")?.open && CG.draw(box) : CG.mini(box)));
@@ -367,7 +423,7 @@
     paint();
   }
   async function load() {
-    for (const base of API ? [API, ""] : [""]) {
+    for (const base of API ? [API, SELF] : [SELF]) {
       try {
         const r = await fetch(base + "api/state.json?t=" + Date.now(), { cache: "no-store" });
         if (!r.ok) throw new Error(r.status);

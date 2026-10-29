@@ -146,6 +146,8 @@ def handler(hub, static=None):
         def file(self, path):
             """Local preview only (Caddy serves the files in production): a file under the static folder."""
             f = (root / (unquote(path).lstrip("/") or "index.html")).resolve()
+            if f.is_dir():
+                f = f / "index.html"                                # a folder's page (cats/), as Caddy serves it
             if root not in f.parents or not f.is_file():
                 self.send_error(404)
                 return

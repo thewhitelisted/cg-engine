@@ -1,5 +1,6 @@
 """The page in the browser: web/app.js renders exactly the page the retired Python renderer produced
-(tests/page_render.test.js), and the real page shell + app follow the live API in a DOM (tests/page_app.test.js, jsdom).
+(tests/page_render.test.js), and the real page shell + app follow the live API in a DOM (tests/page_app.test.js, jsdom);
+the category page draws every matchup's category chances and follows the API the same way (tests/cats_page.test.js).
 Runs when Node is available (CG_NODE, or ~/.local/opt); the DOM test also needs jsdom (NODE_PATH, or ~/.local/opt/jsdom).
 """
 import copy
@@ -55,6 +56,40 @@ class PageAppTest(unittest.TestCase):
             for name, text in files.items():
                 Path(d, name).write_text(text)
             r = node(HERE / "page_app.test.js", *(Path(d, n) for n in files))
+        print(r.stdout, r.stderr)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+
+def with_cat_chances(state):
+    """The state with each matchup's category chances (p_cats, as api_state publishes them): fixed made-up values."""
+    s = copy.deepcopy(state)
+    for j, g in enumerate(s["games"]):
+        g["p_cats"] = [round((0.5 + 0.45 * ld if ld else 0.5) * 0.9 + 0.05 * ((i + j) % 3), 4)
+                       for i, ld in enumerate(g["lead"])]
+    return s
+
+
+@unittest.skipUnless(Path(NODE).exists() and Path(NODE_PATH, "jsdom").exists(), "Node with jsdom not available")
+class CatsPageTest(unittest.TestCase):
+    def test_every_matchups_category_chances(self):
+        a = with_cat_chances(CASES[0]["state"])
+        b = copy.deepcopy(a)
+        b["games"] = b["games"][::-1]                                    # the league page's order changed
+        g = b["games"][0]
+        k = g["key"]
+        g["p_cats"][3] = round(1 - g["p_cats"][3], 4)                    # REB swings to the other side
+        g["p_cats"][8] = 0.5
+        g["totals"][3][1] = str(int(g["totals"][3][1]) + 12)
+        g["lead"][3] = 1
+        g["p_home"] = min(0.99, g["p_home"] + 0.07)
+        b.update(updated="Sun Oct 25, 11:59 PM ET", v="bbbb", ts=a["ts"] + 10)
+        with tempfile.TemporaryDirectory() as d:
+            files = {"cats.html": LP.cats_page(), "app.js": LP.APP_JS.read_text(),
+                     "cases.json": json.dumps({"a": a, "b": b, "old": CASES[1]["state"], "key": k,
+                                               "ops": api.diff(api.strip(a), api.strip(b))})}
+            for name, text in files.items():
+                Path(d, name).write_text(text)
+            r = node(HERE / "cats_page.test.js", *(Path(d, n) for n in files))
         print(r.stdout, r.stderr)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 

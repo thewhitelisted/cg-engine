@@ -184,6 +184,22 @@ class StreamTest(unittest.TestCase):
         c.request("GET", "/nope")
         self.assertEqual(c.getresponse().status, 404)
 
+    def test_local_preview_serves_folder_pages(self):
+        d = Path(tempfile.mkdtemp())
+        (d / "cats").mkdir()
+        (d / "index.html").write_text("league")
+        (d / "cats" / "index.html").write_text("cats")
+        srv = api.start(self.hub, port=0, static=d)
+        self.addCleanup(srv.shutdown)
+        for path, want in (("/", (200, "league")), ("/cats/", (200, "cats")), ("/cats", (200, "cats")),
+                           ("/../cats/index.html", (404, None))):              # nothing outside the folder
+            c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=5)
+            c.request("GET", path)
+            r = c.getresponse()
+            body = r.read().decode()
+            self.assertEqual((path, r.status, body if r.status == 200 else None), (path, *want))
+            c.close()
+
 
 if __name__ == "__main__":
     unittest.main()

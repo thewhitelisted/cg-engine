@@ -1,8 +1,8 @@
 """Public league page: this week's matchups (live score, category totals, games, win chances and their trend,
 categories still in play), who plays today, standings, week-by-week results, head-to-head, all-play record and
 luck, league records, top performers, last week's odds against results, the model's season scorecard, and recent
-adds/drops. Nothing player-level from the model (no projections, values or recommendations) and no playoff or
-title odds.
+adds/drops; and the category page (cats/): every matchup's chance in each category this week. Nothing player-level
+from the model (no projections, values or recommendations) and no playoff or title odds.
 
     python3 league_page.py OUT_DIR        # writes a copy of the site (page, app, state) to OUT_DIR
 
@@ -593,15 +593,8 @@ def last_week(lg, history):
     return {"period": wk, "rows": rows}
 
 
-SHELL_TEMPLATE = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow">
-<title>The Cool Guys · League page</title>
-<style>
-:root { --bg: #f6f6f2; --card: #fcfcfb; --ink: #15171a; --ink2: #4d5056; --muted: #84878c; --rule: #e1e0d9;
+# The pages' shared styles: the league page (index.html) and the category page (cats/index.html)
+STYLE = """:root { --bg: #f6f6f2; --card: #fcfcfb; --ink: #15171a; --ink2: #4d5056; --muted: #84878c; --rule: #e1e0d9;
   --a: #2a78d6; --b: #c8501e; --mid: #ece9e2; --good: #2e7a57; --bad: #b2402e; color-scheme: light; }
 @media (prefers-color-scheme: dark) { :root { --bg: #0f1011; --card: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7;
   --muted: #8e8d87; --rule: #2c2c2a; --a: #5b9ce8; --b: #ec7a45; --mid: #2c2c2a; --good: #63c497; --bad: #e8796a; color-scheme: dark; } }
@@ -688,7 +681,7 @@ nav.jump a { flex: none; padding: 6px 12px; border-radius: 999px; border: 1px so
 nav.jump a:hover { border-color: var(--muted); color: var(--ink); }
 nav.jump a.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 nav.jump a:focus-visible { outline: 2px solid var(--a); outline-offset: 2px; }
-.foot { display: flex; justify-content: center; padding-top: 18px; border-top: 1px solid var(--rule); margin-top: 8px; }
+.foot { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding-top: 18px; border-top: 1px solid var(--rule); margin-top: 8px; }
 .btn { display: inline-block; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--rule); background: var(--card);
   color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: none; }
 .btn:hover { border-color: var(--muted); }
@@ -699,7 +692,18 @@ td.rk { text-align: center; min-width: 40px; }
 .card.tbl:has(> table.grid) { padding-left: 0; }
 table.grid tr > :first-child { position: sticky; left: 0; z-index: 1; background: var(--card); padding-left: 10px; }
 @media (max-width: 560px) { td:first-child { white-space: normal; min-width: 116px; } }
-</style>
+"""
+
+
+SHELL_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>The Cool Guys · League page</title>
+<style>
+""" + STYLE + """</style>
 </head>
 <body>
 <div class="wrap"><p class="note">Loading…</p></div>
@@ -838,6 +842,40 @@ function initNav() {
 </html>
 """
 
+# The category page (cats/index.html): web/app.js renderCats draws it from the same state and stream. It sits one folder
+# down (/cats/), so data-root points the app at this site's own copy of the state.
+CATS_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>The Cool Guys · Category odds</title>
+<style>
+""" + STYLE + """.pct { font-size: 24px; }
+.back { margin: 0 0 4px; font-size: 13.5px; }
+.back a { color: var(--ink2); text-decoration: none; }
+.back a:hover { color: var(--ink); text-decoration: underline; }
+table.odds th, table.odds td { padding: 5px 6px; }
+table.odds th[scope="row"] { color: var(--ink); font-size: 12.5px; letter-spacing: .02em; }
+table.odds th.c { text-align: center; }
+table.odds td.p:not(.fav) { color: var(--muted); }
+table.odds td.p.fav { font-weight: 700; }
+table.odds td.p.b { text-align: left; }
+table.odds td.tug { width: 100%; min-width: 36px; padding-left: 2px; padding-right: 2px; }
+table.odds .bar { height: 8px; border-radius: 4px; }
+table.odds tr:last-child th { border-bottom: 0; }
+@media (max-width: 400px) { .card { padding: 12px; } table.odds th, table.odds td { padding: 5px 3px; } }
+</style>
+</head>
+<body data-page="cats" data-root="../">
+<div class="wrap"><p class="note">Loading…</p></div>
+<script>window.CG_API = window.CG_API ?? "%(live_url)s";</script>
+<script src="../app.js"></script>
+</body>
+</html>
+"""
+
 
 GAME_FIELDS = ("key", "home", "away", "home_abbr", "away_abbr", "p_home", "score", "games", "totals", "lead", "swing",
                "in_play", "trend")
@@ -856,11 +894,13 @@ def _plain(o):
 
 
 def api_state(data):
-    """The public API (api/state.json; web/app.js renders it): exactly what the page shows, as plain JSON. Leaves out what
-    the page doesn't display: each matchup's category probabilities, sort keys, raw transaction times."""
+    """The public API (api/state.json; web/app.js renders it): exactly what the pages show, as plain JSON, with each
+    matchup's category chances as p_cats (the home team's, in CATS order; the category page). Leaves out what the pages
+    don't display: sort keys, raw transaction times."""
     games = [{k: g.get(k) for k in GAME_FIELDS} for g in data["games"]]
-    for g in games:
+    for g, src in zip(games, data["games"]):
         g["trend"] = [[ts, round(float(p), 4)] for ts, p in g["trend"] or []]
+        g["p_cats"] = [round(float(p), 4) for _, p in src.get("lean") or []]
     today = None if data.get("today") is None else [
         {**r, "players": [{k: p[k] for k in ("name", "when", "bench", "out")} for p in r["players"]]} for r in data["today"]]
     moves = [{k: v for k, v in m.items() if k != "ts"} for m in data.get("moves") or []]
@@ -877,13 +917,18 @@ def shell():
     return SHELL_TEMPLATE.replace("%(live_url)s", LIVE_URL)
 
 
+def cats_page():
+    """The category page (cats/index.html): every matchup's chance in each category, drawn by web/app.js."""
+    return CATS_TEMPLATE.replace("%(live_url)s", LIVE_URL)
+
+
 APP_JS = Path(__file__).parent / "web" / "app.js"
 INSIGHTS = Path(__file__).parent / "web" / "insights.html"
 
 
 def site_files(state=None):
-    """{path: text} for a copy of the site: the page, the app, the insights page, and the state if given."""
-    files = {"index.html": shell(), "app.js": APP_JS.read_text()}
+    """{path: text} for a copy of the site: the page, the app, the category and insights pages, and the state if given."""
+    files = {"index.html": shell(), "app.js": APP_JS.read_text(), "cats/index.html": cats_page()}
     if INSIGHTS.exists():
         files["insights.html"] = INSIGHTS.read_text()
     if state is not None:

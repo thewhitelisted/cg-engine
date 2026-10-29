@@ -231,6 +231,7 @@ class SiteTest(unittest.TestCase):
         self.assertFalse((out / "data.json").exists())
         self.assertEqual(sorted(p.name for p in out.iterdir() if p.is_file()), ["app.js", "index.html", "insights.html"])
         self.assertIn('src="app.js"', (out / "index.html").read_text())
+        self.assertIn('src="../app.js"', (out / "cats" / "index.html").read_text())   # the category page, at /cats/
 
     def test_publish_site_commits_code_only_when_it_changed(self):
         root = Path(tempfile.mkdtemp())
