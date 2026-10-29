@@ -30,15 +30,17 @@ def load_league(path=LEAGUE_FILE):
 _GAMELOGS = None
 
 
-def disk_cached(name, ttl_s, fetch_fn):
+def disk_cached(name, ttl_s, fetch_fn, valid=None):
     """fetch_fn() result cached on disk for ttl_s seconds (shared by the separate publish processes of one cloud run,
-    so frequent publishing doesn't re-download ESPN's large player feeds every time)."""
+    so frequent publishing doesn't re-download ESPN's large player feeds every time); valid(cached) False refetches."""
     import pickle
     import time
     f = M.DATA / f".cache_{name}.pkl"
     if f.exists() and time.time() - f.stat().st_mtime < ttl_s:
         try:
-            return pickle.loads(f.read_bytes())
+            got = pickle.loads(f.read_bytes())
+            if valid is None or valid(got):
+                return got
         except Exception:
             pass
     out = fetch_fn()
@@ -52,11 +54,25 @@ def disk_cached(name, ttl_s, fetch_fn):
 GAMELOG_TTL, STATUS_TTL = 1800, 600
 
 
+GAME_DAY_ROLL_H = 3                 # ESPN's fantasy day (latestScoringPeriod) rolls over at 03:00 ET (lineup_log.csv)
+
+
+def game_day(now=None):
+    """The ET date the engine treats as today: ESPN's scoring day, which runs until 03:00 ET the next morning, so a
+    game still being played after midnight stays on its own day. A naive `now` is read as ET."""
+    now = pd.Timestamp.now(tz="US/Eastern") if now is None else pd.Timestamp(now)
+    now = now.tz_localize("US/Eastern") if now.tzinfo is None else now.tz_convert("US/Eastern")
+    return (now - pd.Timedelta(hours=GAME_DAY_ROLL_H)).tz_localize(None).normalize()
+
+
 def gamelogs():
-    """Season-to-date game logs (completed days only), fetched at most every 30 minutes (ESPN can be slow)."""
+    """Season-to-date game logs (completed days only), fetched at most every 30 minutes (ESPN can be slow) and again
+    when the game day changes, so last night's box scores count from the 03:00 ET rollover on."""
     global _GAMELOGS
     if _GAMELOGS is None:
-        _GAMELOGS = disk_cached("gamelogs", GAMELOG_TTL, _fetch_gamelogs)
+        day = game_day()
+        _GAMELOGS = disk_cached("gamelogs", GAMELOG_TTL, lambda: (day, _fetch_gamelogs()),
+                                valid=lambda x: isinstance(x, tuple) and x[0] == day)[1]
     return _GAMELOGS
 
 
@@ -65,7 +81,7 @@ def _fetch_gamelogs():
     g = _fetch_all_gamelogs()
     if len(g):
         sched = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
-        sp_today = sched.loc[sched.date >= pd.Timestamp.today().normalize(), "scoring_period"]
+        sp_today = sched.loc[sched.date >= game_day(), "scoring_period"]
         if len(sp_today):
             g = g[g["scoring_period"] < sp_today.min()]
     return g
@@ -238,7 +254,7 @@ def current_teams():
 def participation(season, g, today=None):
     """Per player: team games so far c, games played n, current run of missed team games m."""
     sched = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
-    today = pd.Timestamp.today().normalize() if today is None else today
+    today = game_day() if today is None else today
     past = sched[sched.date < today]
     team_past = past.groupby("pro_team_id")["scoring_period"].apply(lambda s: np.sort(s.unique()))
     played = g.groupby("id")["scoring_period"].apply(set) if len(g) else pd.Series(dtype=object)
@@ -263,7 +279,7 @@ def rest_nights(season, g, status, today=None):
     team played yesterday and plays today, and he played (minutes > 0) in yesterday's game."""
     df = season.df
     sched = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
-    today = pd.Timestamp.today().normalize() if today is None else today
+    today = game_day() if today is None else today
     yday = dict(zip(*sched.loc[sched.date == today - pd.Timedelta(days=1), ["pro_team_id", "scoring_period"]].values.T))
     playing = set(sched.loc[sched.date == today, "pro_team_id"])
     played = set() if g is None or not len(g) else set(zip(g.loc[g["min"] > 0, "id"], g.loc[g["min"] > 0, "scoring_period"]))

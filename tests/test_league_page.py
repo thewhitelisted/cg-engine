@@ -97,14 +97,14 @@ class ShellTest(unittest.TestCase):
 @unittest.skipUnless(os.environ.get("CG_INTEGRATION") == "1", "set CG_INTEGRATION=1 to build the real state")
 class RealStateTest(unittest.TestCase):
     def test_build_state_and_render(self):
-        from datetime import datetime
+        import inseason as I
         import live as LV
         import live_server as S
         import serve
         import sync
         lg = sync.normalize(S.espn(serve.FULL_VIEWS))
         live, _, _ = S.live_from(S.espn(serve.LIVE_VIEWS))
-        sb = S.scoreboard(datetime.now(LP.ET))
+        sb = S.scoreboard(I.game_day())                                   # the day serve.py reads
         lv = LV.Live(live=live, today_frac={k: v[1] for k, v in sb.items()}, lg=lg, started=LV.started_teams(sb))
         history = {}
         state = LP.api_state(LP.build(lv, history, sb=sb, tx=None))

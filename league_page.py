@@ -223,7 +223,7 @@ def playing_today(lg, sb, now):
     pro.update(lg.get("pro_team", {}))
     if sb is None:                                       # no scoreboard: today's schedule, no times
         sch = pd.read_csv(M.DATA / "schedule_2027.csv")
-        sb = {int(t): ("pre", 1.0, "", "", False) for t in sch[sch.date == now.strftime("%Y-%m-%d")].pro_team_id}
+        sb = {int(t): ("pre", 1.0, "", "", False) for t in sch[sch.date == I.game_day(now).strftime("%Y-%m-%d")].pro_team_id}
 
     def when(state, detail):
         if state == "post":

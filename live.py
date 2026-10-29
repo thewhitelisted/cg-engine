@@ -52,7 +52,7 @@ def remaining_games(season, g, period, today=None, from_tomorrow=False, today_fr
     """Per player: scheduled games left in this matchup period (today's only if not played yet).
     today_frac: {pro_team_id: share of today's game still to play} from the live NBA scoreboard; when given it
     replaces the box-score check, so in-progress games count only their unplayed part."""
-    today = pd.Timestamp(date.today()) if today is None else today
+    today = I.game_day() if today is None else today
     _, end = period_dates(season, period)
     sch = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
     first = today + pd.Timedelta(days=1) if from_tomorrow else today
@@ -106,7 +106,7 @@ def win_week(pc):
 def day_schedule(season, period, today=None, today_frac=None):
     """Remaining days of the matchup period: [(date, weight per player)]; weight = share of that day's game
     still to play (today: from the live scoreboard, or 1 if not started and no box score; later days: 1)."""
-    today = pd.Timestamp(date.today()) if today is None else today
+    today = I.game_day() if today is None else today
     _, end = period_dates(season, period)
     sch = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
     rem = sch[(sch.date >= today) & (sch.date <= end)]
@@ -195,9 +195,8 @@ class Live:
         self.locks = LINEUP_LOCKS if locks is None else locks
         if today_frac is None:                     # read tonight's game clocks so finished games aren't re-counted
             try:
-                from datetime import datetime
                 import live_server
-                sb = live_server.scoreboard(datetime.now())
+                sb = live_server.scoreboard(I.game_day())
                 today_frac, started = {k: v[1] for k, v in sb.items()}, started_teams(sb)
             except Exception:
                 today_frac = None
@@ -253,7 +252,7 @@ class Live:
         self.rest = np.asarray(self.B["info"].get("rest", np.zeros(len(df), bool)))    # S3: sits today's game
         self.share = df["avail"].to_numpy()
         self._cache, self._daily = {}, {}
-        today = pd.Timestamp(date.today())          # K1: players whose game today has started
+        today = I.game_day()                        # K1: players whose game today has started
         self.lock_day = today if self.started is not None and self.days and self.days[0][0] == today else None
         self.lock_started = np.isin(df["pro_team_id"].to_numpy(), list(self.started or ()))
         if MODEL == "L4":
@@ -262,7 +261,7 @@ class Live:
     def _context_setup(self):
         """C1 opponent factors from this season's box scores before today; C3 absent-teammate minutes by NBA team."""
         df, g = self.season.df, self.g
-        today = pd.Timestamp(date.today())
+        today = I.game_day()
         sch = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
         pair = sch.merge(sch, on="game_id", suffixes=("", "_o"))
         pair = pair[pair.pro_team_id != pair.pro_team_id_o]

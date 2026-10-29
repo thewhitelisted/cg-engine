@@ -62,7 +62,7 @@ class Ctx:
         self.limits = self.lg.get("position_limits") or POSITION_LIMITS
         self.ir_ids = {t: {e[0] for e in v} for t, v in self.ir.items()}
         sched = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
-        self.days = sched[(sched.date >= pd.Timestamp(date.today())) & (sched.date < self.season.playoff_dates[0])]
+        self.days = sched[(sched.date >= I.game_day()) & (sched.date < self.season.playoff_dates[0])]
         self.bench_base = self.benched_games(self.rost[self.me])
 
     def roster_ok(self, roster, team_slot):

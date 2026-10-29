@@ -218,7 +218,7 @@ def loop():
                 lv = None
             j = espn(["mMatchupScore", "mScoreboard", "mStatus"])
             live, me_rows, op_rows = live_from(j)
-            games = scoreboard(now)
+            games = scoreboard(I.game_day(now))
             frac = {tid: v[1] for tid, v in games.items()}
             if lv is None or lv.period != live["period"]:
                 lv = LV.Live(live=live, today_frac=frac, lg=I.load_league(), started=LV.started_teams(games))

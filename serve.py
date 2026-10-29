@@ -246,7 +246,7 @@ class Publisher:
         if self.lg is None or since_full >= FULL_EVERY or (since_full >= MIN_FULL_GAP and lineups_differ(lineups_live(j), self.lg)):
             self.full_refresh(live)
         try:
-            sb = S.scoreboard(datetime.now(LP.ET))
+            sb = S.scoreboard(I.game_day())
             frac = {k: v[1] for k, v in sb.items()}
         except Exception:                             # no game clocks this round (as publish_league.py does)
             sb = frac = None
