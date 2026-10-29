@@ -292,8 +292,8 @@ def trade_ideas(cx, per_team=4, top=36):
     out = []
     for _, o, give, get in cands:
         r = cx.rost.copy()
-        r[me] = apply_trade(cx, r[me], give, get, receiving=True)
-        r[o] = apply_trade(cx, r[o], get, give, receiving=True)
+        r[me] = apply_trade(cx, r[me], give, get, receiving=True, team_slot=me)
+        r[o] = apply_trade(cx, r[o], get, give, receiving=True, team_slot=o)
         if not (cx.roster_ok(r[me], me) and cx.roster_ok(r[o], o)):
             continue
         res = cx.delta(r, [me, o])
@@ -305,14 +305,22 @@ def trade_ideas(cx, per_team=4, top=36):
     return out
 
 
-def apply_trade(cx, roster, out_players, in_players, receiving=True):
-    """Swap players; with more incoming than outgoing, drop the lowest-value players; with fewer, add the best FA."""
+def apply_trade(cx, roster, out_players, in_players, receiving=True, team_slot=None):
+    """Swap players; with more incoming than outgoing, drop the lowest-value players; with fewer, add the best FA
+    (a player on no league roster, IR slots included) that keeps team_slot's roster within the position limits."""
     r = [p for p in roster if p >= 0 and p not in out_players] + list(in_players)
     r = sorted(r, key=lambda p: -cx.val[p])[: M.ROSTER]
     if len(r) < M.ROSTER:
-        taken = set(cx.rost[cx.rost >= 0].ravel())
-        fa = [p for p in np.argsort(-cx.val) if p not in taken and p not in r][: M.ROSTER - len(r)]
-        r += fa
+        rostered = {e[0] for t in cx.lg["teams"] for e in t["roster"]}
+        ids = cx.df["id"].to_numpy()
+        for p in np.argsort(-cx.val):
+            if len(r) == M.ROSTER:
+                break
+            if int(ids[p]) in rostered or p in r:
+                continue
+            if team_slot is not None and not cx.roster_ok(np.array(r + [p]), team_slot):
+                continue
+            r.append(p)
     arr = np.full(M.ROSTER, -1, int)
     arr[: len(r)] = r
     return arr
