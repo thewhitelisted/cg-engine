@@ -250,6 +250,7 @@ class Live:
         self.elig = np.array([[RL.eligible(e, sl) for sl in RL.SLOTS] for e in df["elig"].to_numpy()], float)
         self.val, _ = M.static_value(df)
         self.m_now = np.asarray(self.B["info"]["m"])
+        self.rest = np.asarray(self.B["info"].get("rest", np.zeros(len(df), bool)))    # S3: sits today's game
         self.share = df["avail"].to_numpy()
         self._cache, self._daily = {}, {}
         today = pd.Timestamp(date.today())          # K1: players whose game today has started
@@ -304,7 +305,7 @@ class Live:
         for k, (d, w) in enumerate(self.days):
             wr = w[r].copy()
             if k == 0:
-                wr[np.isin(r, list(late))] = 0.0
+                wr[np.isin(r, list(late)) | self.rest[r]] = 0.0
             on = np.where(wr > 0)[0]
             if not len(on):
                 continue

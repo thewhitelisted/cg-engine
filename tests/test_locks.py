@@ -31,6 +31,7 @@ def live_obj(players, frac, started=(), later_days=1, locks=True):
     lv.elig = np.array([[eligible(p[1], s) for s in SLOTS] for p in players], float)
     lv.val = np.array([p[2] for p in players], float)
     lv.share, lv.m_now = np.full(len(players), 0.999), np.zeros(len(players), int)
+    lv.rest = np.zeros(len(players), bool)
     lv.p11, lv.S = LV.RHO, np.array([1.0, 0.5, 0.25, 0.1, 0.05])
     today_w = np.array([frac.get(t, 0.0) for t in team])
     has_today = np.array([t in frac for t in team])

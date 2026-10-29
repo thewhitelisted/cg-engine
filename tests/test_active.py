@@ -29,7 +29,8 @@ def run():
     s.df = pd.DataFrame({"id": range(6), "avail": 0.8, "espn_min": MIN})
     c, n = np.full(6, 8.0), np.array([8.0 - m for m in M_RUN])
     G = np.full((6, 2), 3.0)
-    with mock.patch.object(I, "AVAIL", AV), mock.patch.object(I, "participation", lambda *a, **k: (c, n, np.array(M_RUN))):
+    with mock.patch.object(I, "AVAIL", AV), mock.patch.object(I, "participation", lambda *a, **k: (c, n, np.array(M_RUN))), \
+            mock.patch.object(I, "rest_nights", lambda *a, **k: np.zeros(6, bool)):
         return I.availability(s, None, STATUS, [2, 3], G)
 
 

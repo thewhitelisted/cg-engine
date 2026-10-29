@@ -258,19 +258,35 @@ def participation(season, g, today=None):
     return c, n, m
 
 
+def rest_nights(season, g, status, today=None):
+    """Per player: a rest night on a back-to-back (DECISIONS.md S3). Listed OUT with espn_min >= ACTIVE_MIN, his NBA
+    team played yesterday and plays today, and he played (minutes > 0) in yesterday's game."""
+    df = season.df
+    sched = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
+    today = pd.Timestamp.today().normalize() if today is None else today
+    yday = dict(zip(*sched.loc[sched.date == today - pd.Timedelta(days=1), ["pro_team_id", "scoring_period"]].values.T))
+    playing = set(sched.loc[sched.date == today, "pro_team_id"])
+    played = set() if g is None or not len(g) else set(zip(g.loc[g["min"] > 0, "id"], g.loc[g["min"] > 0, "scoring_period"]))
+    return np.array([status.get(i, "") == "OUT" and mins >= ACTIVE_MIN and tm in playing and tm in yday
+                     and (pid, yday[tm]) in played
+                     for i, (pid, tm, mins) in enumerate(zip(df["id"], df["pro_team_id"], df["espn_min"]))], bool)
+
+
 def availability(season, g, status, periods, G):
     """Blended games-played share (df avail) and per-period availability multipliers A [P, n + 3].
 
     status: ESPN injury status by player index. A player out (current run >= 2, or listed OUT / on IR) gets
     P(back) at each remaining team game from the absence-length survival curve; others get A = 1. A player listed
-    ACTIVE with espn_min >= ACTIVE_MIN is off the injury report, so his missed run is 0 (DECISIONS.md S2)."""
+    ACTIVE with espn_min >= ACTIVE_MIN is off the injury report, so his missed run is 0 (DECISIONS.md S2). So is a
+    player OUT on a rest night (S3); the live engine also takes him out of today's game (info["rest"])."""
     df = season.df
     K = AVAIL["K_gp"]
     S = np.asarray(AVAIL["survival"])
     c, n, m = participation(season, g)
     out_now = np.array([status.get(i, "") in OUT_STATUSES for i in range(len(df))])
     active = np.array([status.get(i, "") == "ACTIVE" for i in range(len(df))]) & (df["espn_min"].to_numpy() >= ACTIVE_MIN)
-    m_eff = np.where(out_now, np.maximum(m, START_M), np.where(active, 0, m))
+    rest = rest_nights(season, g, status)
+    m_eff = np.where(rest | active, 0, np.where(out_now, np.maximum(m, START_M), m))
     absent = m_eff >= AVAIL["absent_m"]
     c0 = np.where(absent, c - np.minimum(m, c), c)          # data before the current absence
     n0 = n                                                   # games played all fall before the absence
@@ -288,7 +304,7 @@ def availability(season, g, status, periods, G):
             idx = np.minimum(m_eff[i] + j, len(S) - 1)
             p_out = S[idx] / S[m_eff[i]] if S[m_eff[i]] > 0 else np.ones(len(j))
             A[i, k] = float(np.mean(1 - p_out)) if len(j) else 1.0
-    return share, A, {"c": c, "n": n, "m": m_eff, "absent": absent}
+    return share, A, {"c": c, "n": n, "m": m_eff, "absent": absent, "rest": rest}
 
 
 def build(season, lg, g, today=None):
