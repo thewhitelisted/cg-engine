@@ -1,6 +1,7 @@
 """The page in the browser: web/app.js renders exactly the page the retired Python renderer produced
 (tests/page_render.test.js), and the real page shell + app follow the live API in a DOM (tests/page_app.test.js, jsdom);
-the category page draws every matchup's category chances and follows the API the same way (tests/cats_page.test.js).
+the category page draws every matchup's category chances and follows the API the same way (tests/cats_page.test.js),
+and so does the players page with every player's week against the model's line (tests/players_page.test.js).
 Runs when Node is available (CG_NODE, or ~/.local/opt); the DOM test also needs jsdom (NODE_PATH, or ~/.local/opt/jsdom).
 """
 import copy
@@ -96,3 +97,33 @@ class CatsPageTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def with_players(state):
+    """The state with a players list (as api_state publishes it): made-up rows covering a free agent, no free throws
+    and an unknown vs expected."""
+    s = copy.deepcopy(state)
+    s["players"] = [{"player": f"Player {i}", "nba": ["LAL", "BOS", "UTAH"][i % 3], "team": None if i % 4 == 0 else f"T{i % 5}",
+                     "g": 1 + i % 3, "pct": None if i == 7 else round(0.9 - 0.13 * i, 4),
+                     "s": [20 + i, 5, 4, 1, i % 2, 2, 3, 8, 15 + i, 0 if i % 5 == 0 else 3, 0 if i % 5 == 0 else 4]}
+                    for i in range(12)]
+    return s
+
+
+@unittest.skipUnless(Path(NODE).exists() and Path(NODE_PATH, "jsdom").exists(), "Node with jsdom not available")
+class PlayersPageTest(unittest.TestCase):
+    def test_every_players_week(self):
+        a = with_players(CASES[0]["state"])
+        b = copy.deepcopy(a)
+        b["players"][0], b["players"][1] = b["players"][1], b["players"][0]     # re-ranked
+        b["players"][1]["s"][0] += 10
+        b["players"] = b["players"] + [{**b["players"][2], "player": "New Guy"}]
+        b.update(updated="Sun Oct 25, 11:59 PM ET", v="pppp", ts=a["ts"] + 10)
+        with tempfile.TemporaryDirectory() as d:
+            files = {"players.html": LP.players_page(), "app.js": LP.APP_JS.read_text(),
+                     "cases.json": json.dumps({"a": a, "b": b, "ops": api.diff(api.strip(a), api.strip(b))})}
+            for name, text in files.items():
+                Path(d, name).write_text(text)
+            r = node(HERE / "players_page.test.js", *(Path(d, n) for n in files))
+        print(r.stdout, r.stderr)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

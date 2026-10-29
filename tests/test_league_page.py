@@ -25,6 +25,7 @@ def data(**over):
     d = {"period": 1, "dates": "Oct 20 – Oct 25", "start": "2026-10-20", "end": "2026-10-25", "updated": "Sun 5:00 PM",
          "v": "x", "ts": 5, "standings": [], "grid": None, "h2h": None, "allplay": [], "records": [], "top": [], "worst": [],
          "last": None, "scorecard": None, "awards": None, "ranks": None, "activity": [],
+         "players": [{"player": "Q", "nba": "AAA", "team": None, "g": 2, "pct": 0.25, "s": [1] * 11}],
          "games": [{"key": "1-2", "home": "A", "away": "B", "home_abbr": "AA", "away_abbr": "BB", "p_home": np.float64(0.25),
                     "score": [np.int64(3), 6, 0], "games": [(4, 5), (6, 7)], "totals": [], "lead": [], "swing": None,
                     "in_play": [], "trend": [["2026-10-21T12:00", 0.123456]],
@@ -55,6 +56,7 @@ class ApiStateTest(unittest.TestCase):
         self.assertEqual(g["trend"], [["2026-10-21T12:00", 0.1235]])
         self.assertEqual(json.loads(json.dumps(s)), s)                    # plain JSON (numpy values converted)
         self.assertEqual((g["p_home"], g["score"][0], g["games"]), (0.25, 3, [[4, 5], [6, 7]]))
+        self.assertEqual(s["players"], data()["players"])                 # the players page's list, as built
 
     def test_version_follows_what_is_shown(self):
         base = LP.api_state(data())["v"]
@@ -67,6 +69,9 @@ class ApiStateTest(unittest.TestCase):
         cats = data()
         cats["games"][0]["lean"][0] = ("FG%", 0.41)
         self.assertNotEqual(LP.api_state(cats)["v"], base)                # a category chance is shown (category page)
+        players = data()
+        players["players"][0]["g"] = 3
+        self.assertNotEqual(LP.api_state(players)["v"], base)             # the players page is shown too
         self.assertEqual(LP.api_state(data(ts=99))["v"], base)
         shown = data()
         shown["games"][0]["p_home"] = 0.3
@@ -108,8 +113,19 @@ class ShellTest(unittest.TestCase):
         self.assertNotIn("%(", s)
         self.assertIsNone(re.search(r"playoff|title odds|champion", s, re.I))
 
+    def test_players_page(self):
+        s = LP.players_page()
+        self.assertIn('<script src="../app.js"></script>', s)             # one folder down: /players/
+        self.assertIn('<body data-page="players" data-root="../">', s)
+        self.assertIn(f'window.CG_API = window.CG_API ?? "{LP.LIVE_URL}"', s)
+        self.assertIn(LP.STYLE, s)
+        self.assertIn('<meta name="robots" content="noindex, nofollow">', s)
+        self.assertNotIn("%(", s)
+        self.assertIsNone(re.search(r"playoff|title odds|champion", s, re.I))
+
     def test_site_files(self):
-        self.assertEqual(sorted(LP.site_files()), ["app.js", "cats/index.html", "index.html", "insights.html"])
+        self.assertEqual(sorted(LP.site_files()), ["app.js", "cats/index.html", "index.html", "insights.html",
+                                                   "players/index.html"])
         files = LP.site_files({"v": "x"})
         self.assertEqual(json.loads(files["api/state.json"]), {"v": "x"})
 

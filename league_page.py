@@ -1,8 +1,9 @@
 """Public league page: this week's matchups (live score, category totals, games, win chances and their trend,
 categories still in play), who plays today, standings, week-by-week results, head-to-head, all-play record and
 luck, league records, top performers, last week's odds against results, the model's season scorecard, and recent
-adds/drops; and the category page (cats/): every matchup's chance in each category this week. Nothing player-level
-from the model (no projections, values or recommendations) and no playoff or title odds.
+adds/drops; the category page (cats/): every matchup's chance in each category this week; and the players page
+(players/): every player's week against the model's line. Player-level, only production against the model's line
+(no projections, values or recommendations), and no playoff or title odds.
 
     python3 league_page.py OUT_DIR        # writes a copy of the site (page, app, state) to OUT_DIR
 
@@ -220,6 +221,62 @@ def performers(lv, g, start, end, n=6, log=None):
                  "effect": float(r.effect)} for (pid, tid), r in sel.iterrows()]
     return (rows(tot[tot.effect > 0].sort_values("effect", ascending=False, kind="stable").head(n)),
             rows(tot[tot.effect < 0].sort_values("effect", kind="stable").head(n)))
+
+
+_PLAYERS = {}
+
+
+def production_table(lv, g, start, end):
+    """The players page: every NBA player who has played this week (game logs through last night, minutes > 0) and
+    has a model line, ranked by his 9-category production against what the model expected from the same games.
+
+    Production is the page's value scale without the replacement-level baseline (each stat over its spread,
+    turnovers negative); expected = the model's current per-game rates x games played. All his games count, benched
+    or not: this is the player's week, not his fantasy team's. Ranked by the gap, so a big game from a big role
+    outranks a big percentage from a small one. Rows: player, NBA team, fantasy team (abbreviation; None for a free
+    agent), games, pct (gap / expected) and s, the week's totals [pts, reb, ast, stl, blk, tpm, tov, fgm, fga, ftm,
+    fta]. Kept until the model, the game logs or the rosters change (the page is rebuilt every live refresh)."""
+    df = lv.season.df
+    owner = {e[0]: t["id"] for t in lv.lg["teams"] for e in t["roster"]}
+    key = (id(df), len(df), float(df["pts"].sum()), len(g), float(g["pts"].sum()) if len(g) else 0.0, str(start),
+           str(end), tuple(sorted(owner.items())))
+    if key in _PLAYERS:
+        return _PLAYERS[key]
+    _PLAYERS.clear()
+    sch = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
+    sp = set(sch[(sch.date >= start) & (sch.date <= end)].scoring_period)
+    idx = {int(i): k for k, i in enumerate(df["id"])}
+    wk = g[g.scoring_period.isin(sp) & (g["min"] > 0) & g["id"].isin(idx)] if len(g) else g
+    if not len(wk):
+        _PLAYERS[key] = []
+        return []
+    keys = ["pts", "reb", "ast", "stl", "blk", "tpm", "tov", "fgm", "fga", "ftm", "fta"]
+    tot = wk.groupby("id")[keys].sum()
+    tot["g"] = wk.groupby("id").size()
+    _, scale = M.static_value(df)
+    mu = np.zeros((len(tot), len(M.STATK)))
+    for st in ("fga", "fta", "tpm", "reb", "ast", "stl", "blk", "tov", "pts"):
+        mu[:, M.SK[st]] = tot[st].to_numpy()
+    mu[:, M.SK["fgx"]] = tot["fgm"] - M.LG_FG * tot["fga"]
+    mu[:, M.SK["ftx"]] = tot["ftm"] - M.LG_FT * tot["fta"]
+    rows_ = [idx[int(p)] for p in tot.index]
+    exp = df[M.STATK].to_numpy(float)[rows_] * tot["g"].to_numpy()[:, None]
+
+    def production(m):
+        return sum(sign * m[:, j] / sd for j, _, sd, sign in scale.values())
+    tot["expected"] = production(exp)
+    tot["gap"] = production(mu) - tot["expected"]
+    nba = pd.read_csv(M.DATA / "teams.csv").set_index("pro_team_id")["abbrev"].to_dict()
+    team_of = df.set_index("id")["pro_team_id"]
+    abbr = abbrevs(lv.lg)
+    names = g.drop_duplicates("id").set_index("id")["name"]
+    out = [{"player": names.get(pid, str(pid)), "nba": nba.get(int(team_of.get(pid, 0) or 0), "—"),
+            "team": abbr.get(owner[pid]) if pid in owner else None, "g": int(r.g),
+            "pct": round(float(r.gap / r.expected), 4) if r.expected > 0 else None,
+            "s": [int(round(r[k])) for k in keys]}
+           for pid, r in tot.sort_values("gap", ascending=False, kind="stable").iterrows()]
+    _PLAYERS[key] = out
+    return out
 
 
 def abbrevs(lg):
@@ -599,6 +656,7 @@ def build(lv, history=None, sb=None, tx=None):
             "end": f"{end:%Y-%m-%d}", "games": games, "today": playing_today(lv.lg, sb, now),
             "standings": standings(lv.lg), "grid": week_grid(lv.lg, games, lv.period), "h2h": head_to_head(lv.lg),
             "allplay": all_play(lv.lg), "records": league_records(lv.lg), **dict(zip(("top", "worst"), performers(lv, g, start, end))),
+            "players": production_table(lv, g, start, end),
             "last": last_week(lv.lg, history), "scorecard": scorecard(lv.lg, history),
             "moves": recent_moves(tx, lv.lg, now), "awards": awards(lv.lg, history),
             "ranks": category_ranks(lv.lg), "activity": activity(lv.lg, tx, history), "updated": now.strftime("%a %b %-d, %-I:%M %p ET")}
@@ -922,10 +980,36 @@ table.odds tr:last-child th { border-bottom: 0; }
 """
 
 
+# The players page (players/index.html): web/app.js renderPlayers draws it from the same state (the players list).
+PLAYERS_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>The Cool Guys · Players vs expected</title>
+<style>
+""" + STYLE + """.back { margin: 0 0 4px; font-size: 13.5px; }
+.back a { color: var(--ink2); text-decoration: none; }
+.back a:hover { color: var(--ink); text-decoration: underline; }
+table.players th, table.players td { padding: 5px 6px; white-space: nowrap; }
+table.players td.n { color: var(--muted); }
+@media (max-width: 400px) { .card { padding: 12px; } table.players th, table.players td { padding: 5px 4px; } }
+</style>
+</head>
+<body data-page="players" data-root="../">
+<div class="wrap"><p class="note">Loading…</p></div>
+<script>window.CG_API = window.CG_API ?? "%(live_url)s";</script>
+<script src="../app.js"></script>
+</body>
+</html>
+"""
+
+
 GAME_FIELDS = ("key", "home", "away", "home_abbr", "away_abbr", "p_home", "score", "games", "totals", "lead", "swing",
                "in_play", "trend")
 STATE_FIELDS = ("period", "dates", "start", "end", "updated", "v", "ts", "standings", "grid", "h2h", "allplay", "records",
-                "top", "worst", "last", "scorecard", "awards", "ranks", "activity")
+                "top", "worst", "last", "scorecard", "awards", "ranks", "activity", "players")
 
 
 def _plain(o):
@@ -967,13 +1051,20 @@ def cats_page():
     return CATS_TEMPLATE.replace("%(live_url)s", LIVE_URL)
 
 
+def players_page():
+    """The players page (players/index.html): every player's week against the model's line, drawn by web/app.js."""
+    return PLAYERS_TEMPLATE.replace("%(live_url)s", LIVE_URL)
+
+
 APP_JS = Path(__file__).parent / "web" / "app.js"
 INSIGHTS = Path(__file__).parent / "web" / "insights.html"
 
 
 def site_files(state=None):
-    """{path: text} for a copy of the site: the page, the app, the category and insights pages, and the state if given."""
-    files = {"index.html": shell(), "app.js": APP_JS.read_text(), "cats/index.html": cats_page()}
+    """{path: text} for a copy of the site: the page, the app, the category, players and insights pages, and the
+    state if given."""
+    files = {"index.html": shell(), "app.js": APP_JS.read_text(), "cats/index.html": cats_page(),
+             "players/index.html": players_page()}
     if INSIGHTS.exists():
         files["insights.html"] = INSIGHTS.read_text()
     if state is not None:

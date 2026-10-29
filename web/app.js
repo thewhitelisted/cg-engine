@@ -8,8 +8,9 @@
    render(state) is a line-by-line port of the page's original Python renderer (league_page.render, retired
    2026-10-25); tests/test_page_render.py holds the page it produced on fixed states, and this must match it exactly.
    renderCats(state) draws the category page (cats/index.html, <body data-page="cats">): every matchup's chance in each
-   category, from the same state and stream. In Node (tests), module.exports gives {render, renderCats, applyPatch, morph,
-   fixed, pct}. */
+   category, from the same state and stream; renderPlayers(state) the players page (players/index.html): every player's
+   week against the model's line. In Node (tests), module.exports gives {render, renderCats, renderPlayers, applyPatch,
+   morph, fixed, pct}. */
 (function (root) {
   "use strict";
   const CATS = ["FG%", "FT%", "3PM", "REB", "AST", "STL", "BLK", "TO", "PTS"];
@@ -344,6 +345,35 @@
 `;
   }
 
+  // ------------------------------------------------------------ the players page (players/index.html)
+  function renderPlayers(data) {
+    const rows = data.players || [];
+    const pctOf = (m, a) => (a ? fixed(m / a, 3).replace(/^0/, "") : "–");      // stat_line's .531
+    const tr = rows.map((r, i) => {
+      const [pts, reb, ast, stl, blk, tpm, tov, fgm, fga, ftm, fta] = r.s;
+      return `<tr><td class="n">${i + 1}</td><td class="l">${e(r.player)}</td><td>${e(r.nba)}</td>` +
+        `<td>${r.team == null ? "—" : e(r.team)}</td><td>${r.g}</td>` +
+        `<td class="${(r.pct || 0) > 0 ? "pos" : "neg"}">${r.pct == null ? "—" : `${signed(100 * r.pct, 0)}%`}</td>` +
+        `<td>${pts}</td><td>${reb}</td><td>${ast}</td><td>${stl}</td><td>${blk}</td><td>${tpm}</td><td>${tov}</td>` +
+        `<td>${pctOf(fgm, fga)}</td><td>${pctOf(ftm, fta)}</td></tr>`;
+    }).join("");
+    const table = rows.length ? section(`${rows.length} players`,
+      '<table class="players"><tr><th>#</th><th class="l">Player</th><th>NBA</th><th>Team</th><th>G</th><th>vs expected</th>' +
+      `<th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>3PM</th><th>TO</th><th>FG%</th><th>FT%</th></tr>${tr}</table>`,
+      "", "players") : '<p class="note">No games played yet this week.</p>';
+    return `
+  <div><p class="back"><a href="../">← League page</a></p><h1>Players vs expected · Matchup ${data.period}</h1>
+  <div class="sub">${e(data.dates)} · updated ${e(data.updated)}</div></div>
+  ${table}
+  <p class="note">Every NBA player who has played this week, ranked by his 9-category production against what the
+  model expected from the same number of games (each category's stat over its spread, turnovers counting against).
+  Ranked by the size of the gap, so a big game from a big role outranks a big percentage from a small one. vs expected:
+  that gap as a share of what was expected. All his games count, benched or not; games through last night. Team: his
+  fantasy team, — if he's on none.</p>
+  <footer class="foot"><a class="btn" href="../">League page</a><a class="btn" href="../insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
+`;
+  }
+
   // ------------------------------------------------------------ patches (api.py writes them; same ops, same order)
   const isObj = x => x !== null && typeof x === "object" && !Array.isArray(x);
   function locate(node, step) {
@@ -395,20 +425,21 @@
     while (a.childNodes.length > b.childNodes.length) a.removeChild(a.lastChild);
   }
 
-  const api = { render, renderCats, applyPatch, morph, fixed, pct, signed, g6 };
+  const api = { render, renderCats, renderPlayers, applyPatch, morph, fixed, pct, signed, g6 };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; return; }
 
   // ------------------------------------------------------------ in the browser: load, draw, follow the stream
   const doc = root.document;
   const API = root.CG_API || "";             // the live server (set by the page); this site's own copy is the fallback
-  const cats = doc.body.dataset.page === "cats", SELF = doc.body.dataset.root || "";   // the category page sits in cats/
+  const page = doc.body.dataset.page || "", SELF = doc.body.dataset.root || "";   // the subpages sit one folder down
+  const draw = { cats: renderCats, players: renderPlayers }[page] || render;
   let state = null, first = true, lastHeard = Date.now();
   function paint() {
     const t = doc.createElement("template");
-    t.innerHTML = `<div class="wrap">${(cats ? renderCats : render)(state)}</div>`;
+    t.innerHTML = `<div class="wrap">${draw(state)}</div>`;
     const st = { dirty: new Set(), nav: false };
     morph(doc.querySelector(".wrap"), t.content.firstElementChild, st);
-    if (cats) return;                         // no charts or section highlighting there
+    if (page) return;                         // no charts or section highlighting on the subpages
     CG.bindCharts();                          // CG and initNav: the page's own script (shared global scope)
     if (first) { first = false; initNav(); CG.initCharts(); return; }
     st.dirty.forEach(box => (box.matches(".tplot") ? box.closest("details.trend")?.open && CG.draw(box) : CG.mini(box)));
