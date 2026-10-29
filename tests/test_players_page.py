@@ -1,6 +1,6 @@
 """The players page's data (league_page.production_table): every player who has played this week and has a model
-line, ranked by 9-category production against the model's line from the same games; bench games count; free agents
-have no fantasy team.
+line and is on a fantasy roster, ranked by 9-category production against the model's line from the same games; bench
+games count; free agents are left out.
 
     python -m unittest discover -s tests
 """
@@ -28,7 +28,7 @@ def logs(rows):
 
 
 def lv(ids=(1, 2, 3, 4)):
-    df = pd.DataFrame({"id": list(ids), "pro_team_id": [10, 10, 20, 0][:len(ids)]})
+    df = pd.DataFrame({"id": list(ids), "pro_team_id": [10, 10, 0, 20][:len(ids)]})
     for s in M.STATK:
         df[s] = 0.0
     for s in ("pts", "reb", "ast", "stl", "blk", "tpm", "tov", "fga", "fta"):
@@ -37,7 +37,8 @@ def lv(ids=(1, 2, 3, 4)):
     df["ftx"] = LINE["ftm"] - M.LG_FT * LINE["fta"]
     x = mock.Mock()
     x.season.df = df
-    x.lg = {"teams": [{"id": 7, "name": "Seven Up", "abbrev": "SVN", "roster": [[1, "P1", 0, "ACTIVE"], [3, "P3", 12, "ACTIVE"]]}]}
+    x.lg = {"teams": [{"id": 7, "name": "Seven Up", "abbrev": "SVN",
+                       "roster": [[1, "P1", 0, "ACTIVE"], [2, "P2", 0, "ACTIVE"], [3, "P3", 12, "ACTIVE"]]}]}
     return x
 
 
@@ -62,19 +63,19 @@ class ProductionTableTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_ranked_by_the_gap(self):
-        # 1: two games at 1.5x; 2: one at 1.2x; 3 (benched, still counts): one at 0.5x; 4: free agent, one at 1.0x;
-        # 5: no model line; 2 also had a DNP and a game last week (period 3)
+        # 1: two games at 1.5x; 2: one at 1.2x; 3 (benched, still counts; no NBA team now): one at 0.5x; 4: free
+        # agent, left out; 5: no model line; 2 also had a DNP and a game last week (period 3)
         g = logs([(1, 7, 30, 1.5), (1, 9, 30, 1.5), (2, 7, 30, 1.2), (2, 9, 0, 0.0), (2, 3, 30, 3.0), (3, 7, 30, 0.5),
                   (4, 7, 30, 1.0), (5, 7, 30, 2.0)])
         rows = LP.production_table(lv(), g, *self.week)
-        self.assertEqual([r["player"] for r in rows], ["P1", "P2", "P4", "P3"])
+        self.assertEqual([r["player"] for r in rows], ["P1", "P2", "P3"])
         by = {r["player"]: r for r in rows}
         self.assertEqual((by["P1"]["g"], by["P2"]["g"], by["P3"]["g"]), (2, 1, 1))
-        self.assertAlmostEqual(by["P4"]["pct"], 0.0, places=6)
+        self.assertAlmostEqual(by["P2"]["pct"], 0.2, places=6)              # 1.2x his line on every stat
         self.assertGreater(by["P1"]["pct"], 0)
         self.assertLess(by["P3"]["pct"], 0)
-        self.assertEqual((by["P1"]["team"], by["P3"]["team"], by["P4"]["team"]), ("SVN", "SVN", None))
-        self.assertEqual((by["P1"]["nba"], by["P4"]["nba"]), ("AAA", "—"))
+        self.assertEqual({r["team"] for r in rows}, {"SVN"})
+        self.assertEqual((by["P1"]["nba"], by["P3"]["nba"]), ("AAA", "—"))
         self.assertEqual(by["P1"]["s"], [60, 18, 12, 3, 3, 6, 6, 24, 48, 6, 6])
         json.dumps(rows)                                   # plain JSON
 

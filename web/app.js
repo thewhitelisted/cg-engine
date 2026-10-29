@@ -8,8 +8,8 @@
    render(state) is a line-by-line port of the page's original Python renderer (league_page.render, retired
    2026-10-25); tests/test_page_render.py holds the page it produced on fixed states, and this must match it exactly.
    renderCats(state) draws the category page (cats/index.html, <body data-page="cats">): every matchup's chance in each
-   category, from the same state and stream; renderPlayers(state) the players page (players/index.html): every player's
-   week against the model's line. In Node (tests), module.exports gives {render, renderCats, renderPlayers, applyPatch,
+   category, from the same state and stream; renderPlayers(state) the players page (players/index.html): every rostered
+   player's week against the model's line. In Node (tests), module.exports gives {render, renderCats, renderPlayers, applyPatch,
    morph, fixed, pct}. */
 (function (root) {
   "use strict";
@@ -365,11 +365,11 @@
   <div><p class="back"><a href="../">← League page</a></p><h1>Players vs expected · Matchup ${data.period}</h1>
   <div class="sub">${e(data.dates)} · updated ${e(data.updated)}</div></div>
   ${table}
-  <p class="note">Every NBA player who has played this week, ranked by his 9-category production against what the
+  <p class="note">Every rostered player who has played this week, ranked by his 9-category production against what the
   model expected from the same number of games (each category's stat over its spread, turnovers counting against).
   Ranked by the size of the gap, so a big game from a big role outranks a big percentage from a small one. vs expected:
   that gap as a share of what was expected. All his games count, benched or not; games through last night. Team: his
-  fantasy team, — if he's on none.</p>
+  fantasy team.</p>
   <footer class="foot"><a class="btn" href="../">League page</a><a class="btn" href="../insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
 `;
   }

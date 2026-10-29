@@ -2,7 +2,7 @@
 categories still in play), who plays today, standings, week-by-week results, head-to-head, all-play record and
 luck, league records, top performers, last week's odds against results, the model's season scorecard, and recent
 adds/drops; the category page (cats/): every matchup's chance in each category this week; and the players page
-(players/): every player's week against the model's line. Player-level, only production against the model's line
+(players/): every rostered player's week against the model's line. Player-level, only production against the model's line
 (no projections, values or recommendations), and no playoff or title odds.
 
     python3 league_page.py OUT_DIR        # writes a copy of the site (page, app, state) to OUT_DIR
@@ -227,15 +227,15 @@ _PLAYERS = {}
 
 
 def production_table(lv, g, start, end):
-    """The players page: every NBA player who has played this week (game logs through last night, minutes > 0) and
-    has a model line, ranked by his 9-category production against what the model expected from the same games.
+    """The players page: every rostered player (on a fantasy roster now, IR included) who has played this week (game
+    logs through last night, minutes > 0) and has a model line, ranked by his 9-category production against what the
+    model expected from the same games. Free agents are left out, so the page is no waiver list.
 
     Production is the page's value scale without the replacement-level baseline (each stat over its spread,
     turnovers negative); expected = the model's current per-game rates x games played. All his games count, benched
     or not: this is the player's week, not his fantasy team's. Ranked by the gap, so a big game from a big role
-    outranks a big percentage from a small one. Rows: player, NBA team, fantasy team (abbreviation; None for a free
-    agent), games, pct (gap / expected) and s, the week's totals [pts, reb, ast, stl, blk, tpm, tov, fgm, fga, ftm,
-    fta]. Kept until the model, the game logs or the rosters change (the page is rebuilt every live refresh)."""
+    outranks a big percentage from a small one. Rows: player, NBA team, fantasy team (abbreviation), games, pct
+    (gap / expected) and s, the week's totals [pts, reb, ast, stl, blk, tpm, tov, fgm, fga, ftm, fta]. Kept until the model, the game logs or the rosters change (the page is rebuilt every live refresh)."""
     df = lv.season.df
     owner = {e[0]: t["id"] for t in lv.lg["teams"] for e in t["roster"]}
     key = (id(df), len(df), float(df["pts"].sum()), len(g), float(g["pts"].sum()) if len(g) else 0.0, str(start),
@@ -246,7 +246,7 @@ def production_table(lv, g, start, end):
     sch = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
     sp = set(sch[(sch.date >= start) & (sch.date <= end)].scoring_period)
     idx = {int(i): k for k, i in enumerate(df["id"])}
-    wk = g[g.scoring_period.isin(sp) & (g["min"] > 0) & g["id"].isin(idx)] if len(g) else g
+    wk = g[g.scoring_period.isin(sp) & (g["min"] > 0) & g["id"].isin(idx) & g["id"].isin(owner)] if len(g) else g
     if not len(wk):
         _PLAYERS[key] = []
         return []
@@ -1052,7 +1052,8 @@ def cats_page():
 
 
 def players_page():
-    """The players page (players/index.html): every player's week against the model's line, drawn by web/app.js."""
+    """The players page (players/index.html): every rostered player's week against the model's line, drawn by
+    web/app.js."""
     return PLAYERS_TEMPLATE.replace("%(live_url)s", LIVE_URL)
 
 
