@@ -13,9 +13,9 @@
 (function (root) {
   "use strict";
   const CATS = ["FG%", "FT%", "3PM", "REB", "AST", "STL", "BLK", "TO", "PTS"];
-  const NAV = [["matchups", "Matchups"], ["today", "Today"], ["awards", "Awards"], ["standings", "Standings"],
-    ["weeks", "Weekly"], ["ranks", "Cat ranks"], ["h2h", "Head to head"], ["allplay", "All-play"], ["records", "Records"],
-    ["top", "Best players"], ["worst", "Worst players"], ["odds", "Odds"], ["moves", "Moves"], ["activity", "Activity"]];
+  const NAV = [["matchups", "Matchups"], ["today", "Today"], ["top", "Best players"], ["worst", "Worst players"],
+    ["awards", "Awards"], ["standings", "Standings"], ["weeks", "Weekly"], ["ranks", "Cat ranks"], ["h2h", "Head to head"],
+    ["allplay", "All-play"], ["records", "Records"], ["odds", "Odds"], ["moves", "Moves"], ["activity", "Activity"]];
 
   // ------------------------------------------------------------ Python-compatible formatting
   const e = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -182,17 +182,16 @@
     const playersTable = (rows, title, sid, note) => {
       if (!rows || !rows.length) return "";
       const tr = rows.map(r => `<tr><td>${e(r.player)}</td><td class="l">${e(r.team)}</td><td>${r.g}</td>` +
-        `<td class="${(r.pct || 0) > 0 ? "pos" : "neg"}">${r.pct == null ? "—" : `${signed(100 * r.pct, 0)}%`}</td>` +
+        `<td class="${(r.effect || 0) > 0 ? "pos" : "neg"}">${r.effect == null ? "—" : `${signed(100 * r.effect, 1)} pts`}</td>` +
         `<td class="l">${e(r.line)}</td></tr>`).join("");
-      return section(title, `<table><tr><th>Player</th><th class="l">Fantasy team</th><th>G</th><th>vs expected</th>` +
+      return section(title, `<table><tr><th>Player</th><th class="l">Fantasy team</th><th>G</th><th>Win chance</th>` +
         `<th class="l">Line</th></tr>${tr}</table>`, note, sid);
     };
-    const how = "vs expected: 9-category production against what the model expected from the same number of games. " +
-      "Ranked by the size of the gap, so a big game from a big role outranks a big percentage from a small one. " +
-      "Rostered players, games through last night.";
+    const how = "Win chance: how many points his games this week moved his fantasy team's chance to win this week's " +
+      "matchup, against the same games played to the model's line. A big game in a category that's already decided " +
+      "counts for little. Only games he started count (benched games don't score); games through last night.";
     const top = playersTable(data.top, "Best performers this week", "top", how);
-    const worst = playersTable(data.worst || [], "Worst performers this week", "worst",
-      how + " Below −100%: turnovers and missed shots outweighed everything else.");
+    const worst = playersTable(data.worst || [], "Worst performers this week", "worst", how);
 
     let last = "";
     if (data.last) {
@@ -265,7 +264,7 @@
 
     const later = finished ? "" : '<p class="note">After the first matchup is final, this page adds standings, week-by-week ' +
       "results, head-to-head records, all-play and luck, league records, and a running scorecard for the odds.</p>";
-    const sections = [today, awards, standings, grid, ranks, h2h, allplay, records, top, worst, last, score, moves, activity];
+    const sections = [today, top, worst, awards, standings, grid, ranks, h2h, allplay, records, last, score, moves, activity];
     const present = new Set(["matchups", ...["today", "awards", "standings", "weeks", "ranks", "h2h", "allplay", "records", "top",
       "worst", "odds", "moves", "activity"].filter(k => sections.join("").includes(`id="${k}"`))]);
     const nav = '<nav class="jump" aria-label="Sections">' +
@@ -281,6 +280,8 @@
   at the bottom, one column per day). Toss-ups: categories where either side has at least a 30% chance to win.
   Games: player-games already played this week · scheduled games left. Updates live: new numbers appear on their own, without reloading.</p>
   ${today}
+  ${top}
+  ${worst}
   ${awards}
   ${standings}
   ${grid}
@@ -288,8 +289,6 @@
   ${h2h}
   ${allplay}
   ${records}
-  ${top}
-  ${worst}
   ${last}
   ${score}
   ${moves}

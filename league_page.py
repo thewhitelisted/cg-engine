@@ -138,43 +138,75 @@ def stat_line(r):
             f"{pct(r.fgm, r.fga)} FG · {pct(r.ftm, r.fta)} FT · {r.tov:.0f} TO")
 
 
-def performers(lv, g, start, end, n=6):
-    """Rostered players' 9-category production this week against what the model expected from the same games.
+def counted_games(lg, g, periods, day_of, log=None):
+    """The game-log rows (minutes > 0) that counted for a player's current fantasy team: on that scoring period he
+    was in a starting slot (0-11) for that team at the end of the day (lineup_log.csv, last row before the 03:00 ET
+    rollover; a slot locks at his game's tip). Returns those rows with the team's id as team_id."""
+    log = M.DATA / "lineup_log.csv" if log is None else log
+    owner = {e[0]: t["id"] for t in lg["teams"] for e in t["roster"]}
+    rows = g[g.scoring_period.isin(periods) & (g["min"] > 0) & g["id"].isin(owner)]
+    if not len(rows) or not log.exists():                 # no lineups known: nothing can be said to have counted
+        return rows.iloc[:0].assign(team_id=pd.Series(dtype=int))
+    ll = pd.read_csv(log)
+    ll["time_utc"] = pd.to_datetime(ll["time_utc"], utc=True)
+    ll = ll.sort_values("time_utc", kind="stable")
+    out = []
+    for p, x in rows.groupby("scoring_period"):
+        cut = (day_of[p] + pd.Timedelta(days=1, hours=I.GAME_DAY_ROLL_H)).tz_localize("US/Eastern").tz_convert("UTC")
+        slot = ll[ll["time_utc"] < cut].groupby(["team_id", "player_id"])["slot"].last()
+        x = x.assign(team_id=x["id"].map(owner))
+        s = [slot.get((t, i), -1) for t, i in zip(x["team_id"], x["id"])]
+        out.append(x[[0 <= v <= 11 for v in s]])
+    return pd.concat(out) if out else rows.assign(team_id=pd.Series(dtype=int))
 
-    Production is the page's value scale without the replacement-level baseline (sum over categories of the
-    stat over its spread, turnovers negative), so it stays positive and a percentage gap is meaningful.
-    Expected = the model's current per-game rates x games played. Returns (best, worst)."""
+
+def performers(lv, g, start, end, n=6, log=None):
+    """Rostered players whose games this week moved their fantasy team's chance to win this week's matchup the most,
+    against the same games played to the model's line.
+
+    Only games that counted (counted_games) are used. Effect: the team's win chance now minus its win chance with
+    his counted stats replaced by the model's current per-game rates times those games. Known totals only shift a
+    team's final mean (live.Live.dists), so each player is one cat_probs call on his matchup. Returns (best, worst)."""
     df = lv.season.df
     sch = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
-    sp = set(sch[(sch.date >= start) & (sch.date <= end)].scoring_period)
+    wk = sch[(sch.date >= start) & (sch.date <= end)]
+    day_of = dict(zip(wk.scoring_period, wk.date))
+    idx = {int(i): k for k, i in enumerate(df["id"])}
     if not len(g):
         return [], []
-    owner = {e[0]: t["name"] for t in lv.lg["teams"] for e in t["roster"]}
-    idx = {int(i): k for k, i in enumerate(df["id"])}
-    wk = g[g.scoring_period.isin(sp) & g["id"].isin(owner) & g["id"].isin(idx)]
-    if not len(wk):
+    cg = counted_games(lv.lg, g, set(day_of), day_of, log)
+    cg = cg[cg["id"].isin(idx)]
+    if not len(cg):
         return [], []
-    tot = wk.groupby("id")[["pts", "reb", "ast", "stl", "blk", "tpm", "tov", "fgm", "fga", "ftm", "fta"]].sum()
-    tot["g"] = wk.groupby("id").size()
-    _, scale = M.static_value(df)
-    mu = np.zeros((len(tot), len(M.STATK)))
-    for st in ("fga", "fta", "tpm", "reb", "ast", "stl", "blk", "tov", "pts"):
-        mu[:, M.SK[st]] = tot[st].to_numpy()
-    mu[:, M.SK["fgx"]] = tot["fgm"] - M.LG_FG * tot["fga"]
-    mu[:, M.SK["ftx"]] = tot["ftm"] - M.LG_FT * tot["fta"]
-    exp = df[M.STATK].to_numpy(float)[[idx[int(p)] for p in tot.index]] * tot["g"].to_numpy()[:, None]
-
-    def production(m):
-        return sum(sign * m[:, j] / sd for j, _, sd, sign in scale.values())
-    tot["actual"], tot["expected"] = production(mu), production(exp)
-    tot["gap"] = tot["actual"] - tot["expected"]
-    names = g.drop_duplicates("id").set_index("id")["name"]
-
-    def rows(sel):
-        return [{"player": names.get(pid, str(pid)), "team": owner[pid], "g": int(r.g), "line": stat_line(r),
-                 "pct": float(r.gap / r.expected) if r.expected > 0 else None} for pid, r in sel.iterrows()]
-    return (rows(tot[tot.gap > 0].sort_values("gap", ascending=False).head(n)),
-            rows(tot[tot.gap < 0].sort_values("gap").head(n)))
+    side = {}
+    for m in lv.live["matchups"]:
+        mA, vA, mB, vB, _ = lv.dists(m["home"], m["away"])
+        base = LV.win_week(LV.cat_probs(mA, vA, mB, vB))
+        side[m["home"]] = (mA, vA, mB, vB, base, True)
+        side[m["away"]] = (mA, vA, mB, vB, base, False)
+    keys = ["pts", "reb", "ast", "stl", "blk", "tpm", "tov", "fgm", "fga", "ftm", "fta"]
+    tot = cg.groupby(["id", "team_id"])[keys].sum()
+    tot["g"] = cg.groupby(["id", "team_id"]).size()
+    rates = df[M.STATK].to_numpy(float)
+    names = {t["id"]: t["name"] for t in lv.lg["teams"]}
+    pnames = g.drop_duplicates("id").set_index("id")["name"]
+    rows = []
+    for (pid, tid), r in tot.iterrows():
+        if tid not in side:
+            continue
+        mA, vA, mB, vB, base, home = side[tid]
+        delta = LV.known_totals(r.to_dict()) - rates[idx[int(pid)]] * r.g
+        if home:
+            p = LV.win_week(LV.cat_probs(mA - delta, vA, mB, vB))
+            eff = base - p
+        else:
+            p = LV.win_week(LV.cat_probs(mA, vA, mB - delta, vB))
+            eff = p - base
+        rows.append({"player": pnames.get(pid, str(pid)), "team": names[tid], "g": int(r.g), "line": stat_line(r),
+                     "effect": round(float(eff), 4)})
+    best = sorted((x for x in rows if x["effect"] > 0), key=lambda x: -x["effect"])[:n]
+    worst = sorted((x for x in rows if x["effect"] < 0), key=lambda x: x["effect"])[:n]
+    return best, worst
 
 
 def abbrevs(lg):

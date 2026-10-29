@@ -374,7 +374,9 @@ class Live:
             return float(self.expected_starts(rost[self.slot[tid]])[0][r].sum())
         return float((self.n_rem * self.a)[r].sum())
 
-    def matchup(self, home, away, rosters=None):
+    def dists(self, home, away, rosters=None):
+        """Final weekly totals for both sides of a matchup: mean and variance per STATK (known so far + the rest).
+        The known totals only enter the means."""
         m = next(x for x in self.live["matchups"] if x["home"] == home and x["away"] == away)
         rost = self.B["rost"] if rosters is None else rosters
         if MODEL in ("L2", "L3", "L4"):
@@ -384,6 +386,10 @@ class Live:
         else:
             mA, vA = final_dist(self.season, rost[self.slot[home]], known_totals(m["home_tot"]), self.n_rem, self.a)
             mB, vB = final_dist(self.season, rost[self.slot[away]], known_totals(m["away_tot"]), self.n_rem, self.a)
+        return mA, vA, mB, vB, m
+
+    def matchup(self, home, away, rosters=None):
+        mA, vA, mB, vB, m = self.dists(home, away, rosters)
         pc = cat_probs(mA, vA, mB, vB)
         return pc, win_week(pc), (mA, mB), m
 
