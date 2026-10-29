@@ -1,6 +1,6 @@
-"""Best and worst performers on the league page: a player's games this week, as far as they counted for his fantasy
-team (a starting slot at the end of the day in lineup_log.csv), against the same games played to the model's line,
-measured by how much they moved his team's chance to win the week.
+"""Best and worst performers on the league page, and the players page's full list: a player's games this week, as
+far as they counted for his fantasy team (a starting slot at the end of the day in lineup_log.csv), against the same
+games played to the model's line, measured by how much they moved his team's chance to win the week.
 
     python -m unittest discover -s tests
 """
@@ -69,11 +69,11 @@ class CountedGamesTest(unittest.TestCase):
 
 class PerformersTest(unittest.TestCase):
     """Two matchups: 1 vs 2 is close in every category, 3 vs 4 is decided. Player 10 (team 1, home) and 20 (team 2,
-    away) beat their lines; 30 (team 3) beats his by more, but in a decided matchup."""
+    away) beat their lines; 21 (team 2) fell short of his; 30 (team 3) beat his, but in a decided matchup."""
 
     def lv(self):
-        ids = [10, 20, 30]
-        df = pd.DataFrame({"id": ids, "pro_team_id": [1, 2, 3]})
+        ids = [10, 20, 21, 30]
+        df = pd.DataFrame({"id": ids, "pro_team_id": [1, 2, 2, 3]})
         rate = np.zeros(len(M.STATK))
         for s in ("pts", "reb", "ast", "stl", "blk", "tpm", "tov", "fga", "fta"):
             rate[M.SK[s]] = STATS[s] / 2                   # his line was twice his rates
@@ -83,7 +83,8 @@ class PerformersTest(unittest.TestCase):
             df[s] = rate[k]
         lv = mock.Mock()
         lv.season.df = df
-        lv.lg = {"teams": [{"id": t, "name": f"T{t}", "roster": [[p, f"P{p}", 0, "ACTIVE"]]} for t, p in ((1, 10), (2, 20), (3, 30), (4, 40))]}
+        lv.lg = {"teams": [{"id": t, "name": f"T{t}", "abbrev": f"A{t}", "roster": [[p, f"P{p}", 0, "ACTIVE"] for p in ps]}
+                           for t, ps in ((1, [10]), (2, [20, 21]), (3, [30]), (4, [40]))]}
         lv.live = {"matchups": [{"home": 1, "away": 2}, {"home": 3, "away": 4}]}
         sd = np.full(len(M.STATK), 30.0)
         even = np.full(len(M.STATK), 100.0)
@@ -98,8 +99,9 @@ class PerformersTest(unittest.TestCase):
         return lv
 
     def test_effects(self):
-        g = logs([(10, 7, 30), (20, 7, 30), (30, 7, 30)])
-        log = pd.DataFrame([("2026-10-26T12:00:00Z", 7, t, p, 0) for t, p in ((1, 10), (2, 20), (3, 30))],
+        short = {**{k: v / 8 for k, v in STATS.items()}, "id": 21, "name": "P21", "scoring_period": 7, "min": 30}
+        g = pd.concat([logs([(10, 7, 30), (20, 7, 30), (30, 7, 30)]), pd.DataFrame([short])], ignore_index=True)
+        log = pd.DataFrame([("2026-10-26T12:00:00Z", 7, t, p, 0) for t, p in ((1, 10), (2, 20), (2, 21), (3, 30))],
                            columns=LOG.columns)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "lineup_log.csv"
@@ -107,17 +109,31 @@ class PerformersTest(unittest.TestCase):
             sched = pd.DataFrame({"pro_team_id": [1], "scoring_period": [7], "date": [D26], "game_id": [1]})
             real = pd.read_csv
             with mock.patch.object(pd, "read_csv", lambda f, *a, **k: sched.copy() if "schedule" in str(f) else real(f, *a, **k)):
-                best, worst = LP.performers(self.lv(), g, D26, D26, n=6, log=path)
+                best, worst, everyone = LP.performers(self.lv(), g, D26, D26, n=6, log=path)
         eff = {r["player"]: r["effect"] for r in best + worst}
         base = LV.win_week(LV.cat_probs(*self.lv().dists(1, 2)[:4]))
         self.assertGreater(eff["P10"], 0)                   # home side, above his line: helped team 1
         self.assertGreater(eff["P20"], 0)                   # away side, same line: helped team 2 by the same
-        self.assertAlmostEqual(eff["P10"], eff["P20"], places=4)
-        self.assertNotIn("P30", eff)                        # decided matchup: no effect
-        self.assertEqual(worst, [])
+        self.assertEqual(eff["P10"], eff["P20"])
+        self.assertLess(eff["P21"], 0)                      # short of his line: hurt team 2
+        self.assertNotIn("P30", eff)                        # decided matchup: no effect, on neither list
+        self.assertEqual([r["player"] for r in worst], ["P21"])
         self.assertEqual(best[0]["team"], "T1")
         self.assertEqual(best[0]["g"], 1)
         self.assertLess(eff["P10"], 1 - base)
+        for x in (eff["P10"], eff["P21"]):
+            self.assertEqual(x, round(x, 3))                # published to a tenth of a point
+        # the players page: everyone with a start, best first, decided matchup included at 0
+        self.assertEqual([r["player"] for r in everyone][2:], ["P30", "P21"])
+        self.assertEqual({r["player"] for r in everyone[:2]}, {"P10", "P20"})
+        by = {r["player"]: r for r in everyone}
+        self.assertEqual(by["P30"]["effect"], 0.0)
+        self.assertEqual(str(by["P30"]["effect"]), "0.0")    # never -0.0
+        nba = pd.read_csv(M.DATA / "teams.csv").set_index("pro_team_id")["abbrev"]
+        self.assertEqual((by["P10"]["nba"], by["P21"]["nba"]), (nba[1], nba[2]))
+        self.assertEqual((by["P10"]["team"], by["P21"]["team"]), ("A1", "A2"))
+        self.assertEqual(by["P10"]["s"], [20, 5, 4, 1, 1, 2, 2, 8, 16, 2, 2])
+        self.assertEqual(by["P10"]["effect"], eff["P10"])   # the same numbers as the league page
 
 
 class WinWeekTest(unittest.TestCase):

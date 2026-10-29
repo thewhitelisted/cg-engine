@@ -1,6 +1,6 @@
-// The players page (players/index.html + web/app.js renderPlayers): every player who has played this week, in the
-// order the state gives (best against the model's line first), one row each with his rank, teams, games, vs expected
-// and the week's totals; then the real page in a DOM (jsdom, network stubbed) loading the state from the live API,
+// The players page (players/index.html + web/app.js renderPlayers): every rostered player who has started this week,
+// in the order the state gives (best for his team's win chance first), one row each with his rank, teams, starts, win
+// chance and the totals from those starts; then the real page in a DOM (jsdom, network stubbed) loading the state from the live API,
 // following its stream in place, and reading this site's own copy one folder up when the live API doesn't answer.
 // Run by tests/test_page_render.py:
 //     node tests/players_page.test.js players.html app.js cases.json
@@ -29,11 +29,13 @@ function checkPage(state, name) {
     const [pts, reb, ast, stl, blk, tpm, tov, fgm, fga, ftm, fta] = p.s;
     const pc = (m, a) => (a ? app.fixed(m / a, 3).replace(/^0/, "") : "–");
     const want = [String(i + 1), p.player, p.nba, p.team == null ? "—" : p.team, String(p.g),
-      p.pct == null ? "—" : `${app.signed(100 * p.pct, 0)}%`, ...[pts, reb, ast, stl, blk, tpm, tov].map(String),
+      p.effect == null ? "—" : `${app.signed(100 * p.effect, 1)} pts`, ...[pts, reb, ast, stl, blk, tpm, tov].map(String),
       pc(fgm, fga), pc(ftm, fta)];
+    const cls = r.querySelectorAll("td")[5].className;
     if (td.join("|") !== want.join("|")) bad.push(`row ${i + 1}: ${td.join("|")} != ${want.join("|")}`);
+    if (cls !== (p.effect > 0 ? "pos" : p.effect < 0 ? "neg" : "")) bad.push(`row ${i + 1}: class "${cls}"`);
   });
-  ok(!bad.length, `${name}: rank, player, teams, games, vs expected, totals and shooting${bad.length ? ": " + bad.slice(0, 3).join("; ") : ""}`);
+  ok(!bad.length, `${name}: rank, player, teams, starts, win chance (colored by sign), totals and shooting${bad.length ? ": " + bad.slice(0, 3).join("; ") : ""}`);
   ok(text(d.querySelector("h2")) === `${P.length} players`, `${name}: the count`);
   ok(!/playoff|title odds|champion/i.test(d.body.textContent), `${name}: no playoff or title odds`);
 }
@@ -69,9 +71,9 @@ function open(serve, errors) {
 (async () => {
   checkPage(C.a, "live state");
   checkPage(C.b, "after a change");
-  ok(text(parse(app.renderPlayers({ ...C.a, players: [] })).querySelector(".note")) === "No games played yet this week.",
-     "nobody has played: says so");
-  ok(parse(app.renderPlayers({ ...C.a, players: undefined })).body.textContent.includes("No games played yet"),
+  ok(text(parse(app.renderPlayers({ ...C.a, players: [] })).querySelector(".note")) === "No games started yet this week.",
+     "nobody has started: says so");
+  ok(parse(app.renderPlayers({ ...C.a, players: undefined })).body.textContent.includes("No games started yet"),
      "a state from before the players list: no error");
   {
     const errors = [];

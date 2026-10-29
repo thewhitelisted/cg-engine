@@ -25,7 +25,7 @@ def data(**over):
     d = {"period": 1, "dates": "Oct 20 – Oct 25", "start": "2026-10-20", "end": "2026-10-25", "updated": "Sun 5:00 PM",
          "v": "x", "ts": 5, "standings": [], "grid": None, "h2h": None, "allplay": [], "records": [], "top": [], "worst": [],
          "last": None, "scorecard": None, "awards": None, "ranks": None, "activity": [],
-         "players": [{"player": "Q", "nba": "AAA", "team": None, "g": 2, "pct": 0.25, "s": [1] * 11}],
+         "players": [{"player": "Q", "nba": "AAA", "team": "TT", "g": 2, "effect": 0.025, "s": [1] * 11}],
          "games": [{"key": "1-2", "home": "A", "away": "B", "home_abbr": "AA", "away_abbr": "BB", "p_home": np.float64(0.25),
                     "score": [np.int64(3), 6, 0], "games": [(4, 5), (6, 7)], "totals": [], "lead": [], "swing": None,
                     "in_play": [], "trend": [["2026-10-21T12:00", 0.123456]],

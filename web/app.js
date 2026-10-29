@@ -9,7 +9,7 @@
    2026-10-25); tests/test_page_render.py holds the page it produced on fixed states, and this must match it exactly.
    renderCats(state) draws the category page (cats/index.html, <body data-page="cats">): every matchup's chance in each
    category, from the same state and stream; renderPlayers(state) the players page (players/index.html): every rostered
-   player's week against the model's line. In Node (tests), module.exports gives {render, renderCats, renderPlayers, applyPatch,
+   player's effect on his team's win chance this week. In Node (tests), module.exports gives {render, renderCats, renderPlayers, applyPatch,
    morph, fixed, pct}. */
 (function (root) {
   "use strict";
@@ -353,23 +353,23 @@
       const [pts, reb, ast, stl, blk, tpm, tov, fgm, fga, ftm, fta] = r.s;
       return `<tr><td class="n">${i + 1}</td><td class="l">${e(r.player)}</td><td>${e(r.nba)}</td>` +
         `<td>${r.team == null ? "—" : e(r.team)}</td><td>${r.g}</td>` +
-        `<td class="${(r.pct || 0) > 0 ? "pos" : "neg"}">${r.pct == null ? "—" : `${signed(100 * r.pct, 0)}%`}</td>` +
+        `<td class="${r.effect > 0 ? "pos" : r.effect < 0 ? "neg" : ""}">${r.effect == null ? "—" : `${signed(100 * r.effect, 1)} pts`}</td>` +
         `<td>${pts}</td><td>${reb}</td><td>${ast}</td><td>${stl}</td><td>${blk}</td><td>${tpm}</td><td>${tov}</td>` +
         `<td>${pctOf(fgm, fga)}</td><td>${pctOf(ftm, fta)}</td></tr>`;
     }).join("");
     const table = rows.length ? section(`${rows.length} players`,
-      '<table class="players"><tr><th>#</th><th class="l">Player</th><th>NBA</th><th>Team</th><th>G</th><th>vs expected</th>' +
+      '<table class="players"><tr><th>#</th><th class="l">Player</th><th>NBA</th><th>Team</th><th>G</th><th>Win chance</th>' +
       `<th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>3PM</th><th>TO</th><th>FG%</th><th>FT%</th></tr>${tr}</table>`,
-      "", "players") : '<p class="note">No games played yet this week.</p>';
+      "", "players") : '<p class="note">No games started yet this week.</p>';
     return `
-  <div><p class="back"><a href="../">← League page</a></p><h1>Players vs expected · Matchup ${data.period}</h1>
+  <div><p class="back"><a href="../">← League page</a></p><h1>Players this week · Matchup ${data.period}</h1>
   <div class="sub">${e(data.dates)} · updated ${e(data.updated)}</div></div>
   ${table}
-  <p class="note">Every rostered player who has played this week, ranked by his 9-category production against what the
-  model expected from the same number of games (each category's stat over its spread, turnovers counting against).
-  Ranked by the size of the gap, so a big game from a big role outranks a big percentage from a small one. vs expected:
-  that gap as a share of what was expected. All his games count, benched or not; games through last night. Team: his
-  fantasy team.</p>
+  <p class="note">Every rostered player who has started a game this week, ranked by win chance: how many points his
+  games moved his fantasy team's chance to win this week's matchup, against the same games played to the model's line.
+  The league page's best and worst players, in full. A big game in a category that's already decided counts for little.
+  Only games he started count (benched games don't score); games through last night. G: games started, and the totals
+  are from those games. Team: his fantasy team.</p>
   <footer class="foot"><a class="btn" href="../">League page</a><a class="btn" href="../insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
 `;
   }

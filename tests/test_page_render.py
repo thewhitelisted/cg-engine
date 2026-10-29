@@ -1,7 +1,7 @@
 """The page in the browser: web/app.js renders exactly the page the retired Python renderer produced
 (tests/page_render.test.js), and the real page shell + app follow the live API in a DOM (tests/page_app.test.js, jsdom);
 the category page draws every matchup's category chances and follows the API the same way (tests/cats_page.test.js),
-and so does the players page with every player's week against the model's line (tests/players_page.test.js).
+and so does the players page with every rostered player's effect on his team's win chance (tests/players_page.test.js).
 Runs when Node is available (CG_NODE, or ~/.local/opt); the DOM test also needs jsdom (NODE_PATH, or ~/.local/opt/jsdom).
 """
 import copy
@@ -100,11 +100,11 @@ if __name__ == "__main__":
 
 
 def with_players(state):
-    """The state with a players list (as api_state publishes it): made-up rows covering a free agent, no free throws
-    and an unknown vs expected."""
+    """The state with a players list (as api_state publishes it): made-up rows, best first, covering no effect, no
+    free throws and a missing team."""
     s = copy.deepcopy(state)
-    s["players"] = [{"player": f"Player {i}", "nba": ["LAL", "BOS", "UTAH"][i % 3], "team": None if i % 4 == 0 else f"T{i % 5}",
-                     "g": 1 + i % 3, "pct": None if i == 7 else round(0.9 - 0.13 * i, 4),
+    s["players"] = [{"player": f"Player {i}", "nba": ["LAL", "BOS", "UTAH"][i % 3], "team": None if i == 4 else f"T{i % 5}",
+                     "g": 1 + i % 3, "effect": 0.0 if i == 6 else round(0.081 - 0.0135 * i, 3),
                      "s": [20 + i, 5, 4, 1, i % 2, 2, 3, 8, 15 + i, 0 if i % 5 == 0 else 3, 0 if i % 5 == 0 else 4]}
                     for i in range(12)]
     return s
