@@ -95,12 +95,16 @@ def final_dist(season, roster, known, n_rem, a):
 
 
 def win_week(pc):
-    """P(win at least 5 of 9). L3: over-dispersed normal on categories won; L1b: independent Poisson-binomial."""
+    """P(win at least 5 of 9) from category chances [..., 9]: a float for one matchup, an array for a batch.
+    L3: over-dispersed normal on categories won; L1b: independent Poisson-binomial."""
+    pc = np.asarray(pc)
     if MODEL not in ("L3", "L4"):
-        return float(M.Evaluator.matchup_win(pc))
-    from scipy.stats import norm
-    mu, var = pc.sum(), (pc * (1 - pc)).sum() * (1 + PSI)
-    return float(1 - norm.cdf((4.5 - mu) / np.sqrt(max(var, 1e-9))))
+        p = M.Evaluator.matchup_win(pc)
+    else:
+        from scipy.stats import norm
+        mu, var = pc.sum(-1), (pc * (1 - pc)).sum(-1) * (1 + PSI)
+        p = 1 - norm.cdf((4.5 - mu) / np.sqrt(np.maximum(var, 1e-9)))
+    return float(p) if np.ndim(p) == 0 else p
 
 
 def day_schedule(season, period, today=None, today_frac=None):

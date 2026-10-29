@@ -138,15 +138,25 @@ def stat_line(r):
             f"{pct(r.fgm, r.fga)} FG · {pct(r.ftm, r.fta)} FT · {r.tov:.0f} TO")
 
 
+_COUNTED = {}
+
+
 def counted_games(lg, g, periods, day_of, log=None):
     """The game-log rows (minutes > 0) that counted for a player's current fantasy team: on that scoring period he
     was in a starting slot (0-11) for that team at the end of the day (lineup_log.csv, last row before the 03:00 ET
-    rollover; a slot locks at his game's tip). Returns those rows with the team's id as team_id."""
+    rollover; a slot locks at his game's tip). Returns those rows with the team's id as team_id. Kept until the
+    rosters, the game logs or the lineup log change (the page is rebuilt every live refresh)."""
     log = M.DATA / "lineup_log.csv" if log is None else log
     owner = {e[0]: t["id"] for t in lg["teams"] for e in t["roster"]}
     rows = g[g.scoring_period.isin(periods) & (g["min"] > 0) & g["id"].isin(owner)]
     if not len(rows) or not log.exists():                 # no lineups known: nothing can be said to have counted
         return rows.iloc[:0].assign(team_id=pd.Series(dtype=int))
+    st = log.stat()
+    key = (tuple(sorted(owner.items())), len(g), float(g["pts"].sum()), tuple(sorted(periods)), str(log),
+           st.st_mtime_ns, st.st_size)
+    if key in _COUNTED:
+        return _COUNTED[key]
+    _COUNTED.clear()
     ll = pd.read_csv(log)
     ll["time_utc"] = pd.to_datetime(ll["time_utc"], utc=True)
     ll = ll.sort_values("time_utc", kind="stable")
@@ -157,7 +167,8 @@ def counted_games(lg, g, periods, day_of, log=None):
         x = x.assign(team_id=x["id"].map(owner))
         s = [slot.get((t, i), -1) for t, i in zip(x["team_id"], x["id"])]
         out.append(x[[0 <= v <= 11 for v in s]])
-    return pd.concat(out) if out else rows.assign(team_id=pd.Series(dtype=int))
+    _COUNTED[key] = pd.concat(out) if out else rows.iloc[:0].assign(team_id=pd.Series(dtype=int))
+    return _COUNTED[key]
 
 
 def performers(lv, g, start, end, n=6, log=None):
@@ -166,7 +177,7 @@ def performers(lv, g, start, end, n=6, log=None):
 
     Only games that counted (counted_games) are used. Effect: the team's win chance now minus its win chance with
     his counted stats replaced by the model's current per-game rates times those games. Known totals only shift a
-    team's final mean (live.Live.dists), so each player is one cat_probs call on his matchup. Returns (best, worst)."""
+    team's final mean (live.Live.dists), so a team's players are one batched cat_probs call. Returns (best, worst)."""
     df = lv.season.df
     sch = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
     wk = sch[(sch.date >= start) & (sch.date <= end)]
@@ -190,23 +201,25 @@ def performers(lv, g, start, end, n=6, log=None):
     rates = df[M.STATK].to_numpy(float)
     names = {t["id"]: t["name"] for t in lv.lg["teams"]}
     pnames = g.drop_duplicates("id").set_index("id")["name"]
-    rows = []
-    for (pid, tid), r in tot.iterrows():
+    tot["effect"] = np.nan
+    for tid, x in tot.groupby(level="team_id"):
         if tid not in side:
             continue
         mA, vA, mB, vB, base, home = side[tid]
-        delta = LV.known_totals(r.to_dict()) - rates[idx[int(pid)]] * r.g
+        delta = np.array([LV.known_totals(r.to_dict()) for _, r in x.iterrows()])
+        delta -= rates[[idx[int(pid)] for pid, _ in x.index]] * x["g"].to_numpy()[:, None]
         if home:
-            p = LV.win_week(LV.cat_probs(mA - delta, vA, mB, vB))
-            eff = base - p
+            eff = base - LV.win_week(LV.cat_probs(mA - delta, vA, mB, vB))
         else:
-            p = LV.win_week(LV.cat_probs(mA, vA, mB - delta, vB))
-            eff = p - base
-        rows.append({"player": pnames.get(pid, str(pid)), "team": names[tid], "g": int(r.g), "line": stat_line(r),
-                     "effect": round(float(eff), 4)})
-    best = sorted((x for x in rows if x["effect"] > 0), key=lambda x: -x["effect"])[:n]
-    worst = sorted((x for x in rows if x["effect"] < 0), key=lambda x: x["effect"])[:n]
-    return best, worst
+            eff = LV.win_week(LV.cat_probs(mA, vA, mB - delta, vB)) - base
+        tot.loc[x.index, "effect"] = np.round(eff, 4)
+    tot = tot.dropna(subset=["effect"])
+
+    def rows(sel):
+        return [{"player": pnames.get(pid, str(pid)), "team": names[tid], "g": int(r.g), "line": stat_line(r),
+                 "effect": float(r.effect)} for (pid, tid), r in sel.iterrows()]
+    return (rows(tot[tot.effect > 0].sort_values("effect", ascending=False, kind="stable").head(n)),
+            rows(tot[tot.effect < 0].sort_values("effect", kind="stable").head(n)))
 
 
 def abbrevs(lg):

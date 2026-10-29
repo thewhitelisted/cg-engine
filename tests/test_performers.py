@@ -54,6 +54,14 @@ class CountedGamesTest(unittest.TestCase):
         # 20 started p7 and had no minutes on p8
         self.assertEqual(got, [(10, 7, 1), (11, 8, 1), (20, 7, 2)])
 
+    def test_recounted_when_the_lineup_log_changes(self):
+        g = logs([(10, 7, 30), (12, 7, 30)])
+        first = LP.counted_games(LG, g, {7}, DAY_OF, self.log)
+        self.assertEqual(sorted(first["id"]), [10])
+        more = pd.concat([LOG, pd.DataFrame([("2026-10-26T23:30:00Z", 7, 1, 12, 11)], columns=LOG.columns)])
+        more.to_csv(self.log, index=False)                                 # 12 back in a starting slot before his game
+        self.assertEqual(sorted(LP.counted_games(LG, g, {7}, DAY_OF, self.log)["id"]), [10, 12])
+
     def test_no_log(self):
         g = logs([(10, 7, 30)])
         self.assertEqual(len(LP.counted_games(LG, g, {7}, DAY_OF, Path(self.tmp.name) / "none.csv")), 0)
@@ -110,6 +118,13 @@ class PerformersTest(unittest.TestCase):
         self.assertEqual(best[0]["team"], "T1")
         self.assertEqual(best[0]["g"], 1)
         self.assertLess(eff["P10"], 1 - base)
+
+
+class WinWeekTest(unittest.TestCase):
+    def test_batch_matches_one_at_a_time(self):
+        pc = np.random.default_rng(3).uniform(0, 1, (20, 9))
+        np.testing.assert_allclose(LV.win_week(pc), [LV.win_week(r) for r in pc])
+        self.assertIsInstance(LV.win_week(pc[0]), float)
 
 
 class DistsTest(unittest.TestCase):
