@@ -189,6 +189,7 @@ def head_to_head(lg, tids, n_reg=19):
 AVAIL = json.loads((M.DATA / "availability.json").read_text()) if (M.DATA / "availability.json").exists() else None
 OUT_STATUSES = ("OUT", "INJURY_RESERVE", "SUSPENSION")
 START_M = 4                     # an OUT/IR player with no in-season absence yet: typical start of a long absence
+ACTIVE_MIN = 20                 # S2: an ESPN-ACTIVE player projected for >= 20 minutes has no missed run
 N_IR = 2
 
 
@@ -261,13 +262,15 @@ def availability(season, g, status, periods, G):
     """Blended games-played share (df avail) and per-period availability multipliers A [P, n + 3].
 
     status: ESPN injury status by player index. A player out (current run >= 2, or listed OUT / on IR) gets
-    P(back) at each remaining team game from the absence-length survival curve; others get A = 1."""
+    P(back) at each remaining team game from the absence-length survival curve; others get A = 1. A player listed
+    ACTIVE with espn_min >= ACTIVE_MIN is off the injury report, so his missed run is 0 (DECISIONS.md S2)."""
     df = season.df
     K = AVAIL["K_gp"]
     S = np.asarray(AVAIL["survival"])
     c, n, m = participation(season, g)
     out_now = np.array([status.get(i, "") in OUT_STATUSES for i in range(len(df))])
-    m_eff = np.where(out_now, np.maximum(m, START_M), m)
+    active = np.array([status.get(i, "") == "ACTIVE" for i in range(len(df))]) & (df["espn_min"].to_numpy() >= ACTIVE_MIN)
+    m_eff = np.where(out_now, np.maximum(m, START_M), np.where(active, 0, m))
     absent = m_eff >= AVAIL["absent_m"]
     c0 = np.where(absent, c - np.minimum(m, c), c)          # data before the current absence
     n0 = n                                                   # games played all fall before the absence
