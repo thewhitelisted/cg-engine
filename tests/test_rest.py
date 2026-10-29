@@ -53,7 +53,8 @@ class RestNightTest(unittest.TestCase):
         c, n, m = np.full(7, 8.0), np.full(7, 8.0), np.zeros(7, int)
         r = rest()
         with mock.patch.object(I, "AVAIL", av), mock.patch.object(I, "participation", lambda *a, **k: (c, n, m)), \
-                mock.patch.object(I, "rest_nights", lambda *a, **k: r):
+                mock.patch.object(I, "rest_nights", lambda *a, **k: r), \
+                mock.patch.object(I, "rest_carry", lambda *a, **k: np.zeros(7, bool)):
             _, A, info = I.availability(season(), G_LOG, STATUS, [2], np.full((7, 1), 3.0))
         np.testing.assert_array_equal(info["rest"], r)
         np.testing.assert_array_equal(info["m"], [0, I.START_M, I.START_M, I.START_M, 0, I.START_M, 0])

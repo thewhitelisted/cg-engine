@@ -12,6 +12,7 @@ import json
 
 import numpy as np
 import pandas as pd
+import requests
 
 import fetch
 import model as M
@@ -52,6 +53,7 @@ def disk_cached(name, ttl_s, fetch_fn, valid=None):
 
 
 GAMELOG_TTL, STATUS_TTL = 1800, 600
+SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
 
 
 GAME_DAY_ROLL_H = 3                 # ESPN's fantasy day (latestScoringPeriod) rolls over at 03:00 ET (lineup_log.csv)
@@ -288,13 +290,71 @@ def rest_nights(season, g, status, today=None):
                      for i, (pid, tm, mins) in enumerate(zip(df["id"], df["pro_team_id"], df["espn_min"]))], bool)
 
 
+def tip_times(day):
+    """Scheduled tip (UTC) of each NBA team's game on `day`: {pro_team_id: Timestamp}, from ESPN's scoreboard. A past
+    day's tips don't change, so it is cached on disk; {} if the feed fails (fetched again next time)."""
+    def get():
+        try:
+            r = requests.get(SCOREBOARD, params={"dates": day.strftime("%Y%m%d")}, timeout=20)
+            r.raise_for_status()
+            out = {}
+            for e in r.json().get("events", []):
+                tip = pd.Timestamp(e["date"])
+                if tip.tz_convert("US/Eastern").strftime("%Y-%m-%d") == day.strftime("%Y-%m-%d"):
+                    out.update({int(t["team"]["id"]): tip for t in e["competitions"][0]["competitors"]})
+            return out
+        except Exception:
+            return {}
+    return disk_cached(f"tips_{day:%Y%m%d}", 30 * 86400, get, valid=bool)
+
+
+def rest_carry(season, g, status, today=None, log=None):
+    """Per player: a gap day after a rest night (DECISIONS.md S3b). His NBA team has no game today and its last game
+    day was a rest night for him: espn_min >= ACTIVE_MIN, his team played the day before and he played in that game,
+    he did not play on the rest night, and his ESPN status at that game's scheduled tip (the last status_log.csv row
+    before it) was OUT. While ESPN still lists him OUT or DAY_TO_DAY he keeps S3's treatment (no missed run) until
+    his team's next game day; from then on the normal status logic applies. No tip time (feed down): no carry."""
+    df = season.df
+    out = np.zeros(len(df), bool)
+    log = M.DATA / "status_log.csv" if log is None else log
+    if g is None or not len(g) or not log.exists():
+        return out
+    sched = pd.read_csv(M.DATA / "schedule_2027.csv", parse_dates=["date"])
+    today = game_day() if today is None else today
+    period = {(int(t), d): int(p) for t, p, d in zip(sched["pro_team_id"], sched["scoring_period"], sched["date"])}
+    playing = set(sched.loc[sched.date == today, "pro_team_id"])
+    last = sched[sched.date < today].groupby("pro_team_id")["date"].max()
+    played = set(zip(g.loc[g["min"] > 0, "id"], g.loc[g["min"] > 0, "scoring_period"]))
+    st_log, tips = None, {}
+    for i, (pid, tm, mins) in enumerate(zip(df["id"], df["pro_team_id"], df["espn_min"])):
+        if status.get(i, "") not in ("OUT", "DAY_TO_DAY") or mins < ACTIVE_MIN or tm in playing or tm not in last.index:
+            continue
+        day = last[tm]
+        p_rest, p_prev = period.get((int(tm), day)), period.get((int(tm), day - pd.Timedelta(days=1)))
+        if p_prev is None or (pid, p_prev) not in played or (pid, p_rest) in played:
+            continue
+        if day not in tips:
+            tips[day] = tip_times(day)
+        tip = tips[day].get(int(tm))
+        if tip is None:
+            continue
+        if st_log is None:
+            st_log = pd.read_csv(log, dtype={"player_id": int, "status": str})
+            st_log["time_utc"] = pd.to_datetime(st_log["time_utc"], utc=True)
+            st_log = st_log.sort_values("time_utc", kind="stable")
+        x = st_log[(st_log["player_id"] == int(pid)) & (st_log["time_utc"] <= tip)]
+        out[i] = len(x) > 0 and x["status"].iloc[-1] == "OUT"
+    return out
+
+
 def availability(season, g, status, periods, G):
     """Blended games-played share (df avail) and per-period availability multipliers A [P, n + 3].
 
     status: ESPN injury status by player index. A player out (current run >= 2, or listed OUT / on IR) gets
     P(back) at each remaining team game from the absence-length survival curve; others get A = 1. A player listed
     ACTIVE with espn_min >= ACTIVE_MIN is off the injury report, so his missed run is 0 (DECISIONS.md S2). So is a
-    player OUT on a rest night (S3); the live engine also takes him out of today's game (info["rest"])."""
+    player OUT on a rest night (S3); the live engine also takes him out of today's game (info["rest"]). He keeps the
+    zero run on his team's gap days after it, until its next game day (S3b, info["rest_carry"])."""
     df = season.df
     K = AVAIL["K_gp"]
     S = np.asarray(AVAIL["survival"])
@@ -302,7 +362,8 @@ def availability(season, g, status, periods, G):
     out_now = np.array([status.get(i, "") in OUT_STATUSES for i in range(len(df))])
     active = np.array([status.get(i, "") == "ACTIVE" for i in range(len(df))]) & (df["espn_min"].to_numpy() >= ACTIVE_MIN)
     rest = rest_nights(season, g, status)
-    m_eff = np.where(rest | active, 0, np.where(out_now, np.maximum(m, START_M), m))
+    carry = rest_carry(season, g, status)
+    m_eff = np.where(rest | carry | active, 0, np.where(out_now, np.maximum(m, START_M), m))
     absent = m_eff >= AVAIL["absent_m"]
     c0 = np.where(absent, c - np.minimum(m, c), c)          # data before the current absence
     n0 = n                                                   # games played all fall before the absence
@@ -320,7 +381,7 @@ def availability(season, g, status, periods, G):
             idx = np.minimum(m_eff[i] + j, len(S) - 1)
             p_out = S[idx] / S[m_eff[i]] if S[m_eff[i]] > 0 else np.ones(len(j))
             A[i, k] = float(np.mean(1 - p_out)) if len(j) else 1.0
-    return share, A, {"c": c, "n": n, "m": m_eff, "absent": absent, "rest": rest}
+    return share, A, {"c": c, "n": n, "m": m_eff, "absent": absent, "rest": rest, "rest_carry": carry}
 
 
 def build(season, lg, g, today=None):
