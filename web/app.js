@@ -193,6 +193,7 @@
       "counts for little. Only games he started count (benched games don't score); games through last night.";
     const top = playersTable(data.top, "Best performers this week", "top", how);
     const worst = playersTable(data.worst || [], "Worst performers this week", "worst", how);
+    const more = top || worst ? '<div class="more"><a class="btn" href="players/">Every player\'s week</a></div>' : "";
 
     let last = "";
     if (data.last) {
@@ -283,6 +284,7 @@
   ${today}
   ${top}
   ${worst}
+  ${more}
   ${awards}
   ${standings}
   ${grid}
@@ -295,7 +297,7 @@
   ${moves}
   ${activity}
   ${later}
-  <footer class="foot"><a class="btn" href="players/">Every player's week</a><a class="btn" href="insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
+  <footer class="foot"><a class="btn" href="insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
 `;
   }
 

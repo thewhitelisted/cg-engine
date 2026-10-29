@@ -2,7 +2,7 @@
 categories still in play), who plays today, standings, week-by-week results, head-to-head, all-play record and
 luck, league records, top performers, last week's odds against results, the model's season scorecard, and recent
 adds/drops; the category page (cats/): every matchup's chance in each category this week; and the players page
-(players/, linked from the league page's footer): how much every rostered player's starts moved his team's win
+(players/, linked under the league page's best and worst players): how much every rostered player's starts moved his team's win
 chance this week. Player-level, only how a
 player's games moved his team's win chance (no projections, values or recommendations), and no playoff or title odds.
 
@@ -739,6 +739,7 @@ nav.jump a { flex: none; padding: 6px 12px; border-radius: 999px; border: 1px so
 nav.jump a:hover { border-color: var(--muted); color: var(--ink); }
 nav.jump a.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 nav.jump a:focus-visible { outline: 2px solid var(--a); outline-offset: 2px; }
+.more { display: flex; justify-content: center; }
 .foot { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding-top: 18px; border-top: 1px solid var(--rule); margin-top: 8px; }
 .btn { display: inline-block; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--rule); background: var(--card);
   color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: none; }

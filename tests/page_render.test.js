@@ -30,5 +30,11 @@ for (const [got, want] of fmt) {
 const tied = cases.find(c => c.state.last && c.state.last.rows.some(r => r.tie && r.p_home != null));
 const row = tied && app.render(tied.state).match(/<tr><td>[^<]* vs [^<]*<\/td>(?:(?!<\/tr>).)*>Tie[^<]*<\/td><\/tr>/);
 if (!row || /✓|upset/.test(row[0])) { failed++; console.log(`FAIL tie mark: ${row ? row[0] : "no tied row with odds"}`); }
-console.log(failed ? `${failed} FAILED` : `all ${cases.length} pages identical; formatting and tie checks passed`);
+// the players page button sits under the best and worst players, and only when there are some
+const bare = app.render({ ...cases[0].state, top: [], worst: [] });
+if (bare.includes('href="players/"')) { failed++; console.log("FAIL players button shown without best/worst players"); }
+if (!/<section id="worst"[^]*?<\/section>\n  <div class="more"><a class="btn" href="players\/">/.test(app.render(cases[0].state))) {
+  failed++; console.log("FAIL players button not right under the worst players");
+}
+console.log(failed ? `${failed} FAILED` : `all ${cases.length} pages identical; formatting, tie and players-button checks passed`);
 process.exit(failed ? 1 : 0);
