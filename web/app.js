@@ -295,7 +295,7 @@
   ${moves}
   ${activity}
   ${later}
-  <footer class="foot"><a class="btn" href="cats/">Category odds, every matchup</a><a class="btn" href="insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
+  <footer class="foot"><a class="btn" href="insights.html" target="_blank" rel="noopener">Insights: how the odds work ↗</a></footer>
 `;
   }
 
